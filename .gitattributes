@@ -14,3 +14,9 @@
 
 # The archived 2.x build is a historical artefact; leave its bytes alone.
 legacy/** -text
+
+# Model weights and the ONNX Runtime WebAssembly build are binary. Without
+# these, the `* text=auto eol=lf` rule above rewrites bytes that happen to look
+# like line endings and the files arrive corrupt.
+*.wasm binary
+*.onnx binary

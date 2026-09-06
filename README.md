@@ -46,7 +46,7 @@ server — see [Running it locally](#running-it-locally) and
 
 | Tool | What it does |
 | --- | --- |
-| **Batch Cropper** | Trims the empty margin off product photos in bulk. Full crop or centred 1:1 square. Outputs lossless WebP, as a ZIP or as individual files. |
+| **Batch Cropper** | Trims the empty margin off product photos in bulk. Full crop or centred 1:1 square, and optionally cuts the product out of its background with a model that runs on the machine you are sitting at. Outputs lossless WebP, as a ZIP or as individual files. |
 | **Smart Resizer** | Places one image inside a fixed output canvas, positioned by hand. Fit or fill, drag with centre snapping, transparent or coloured background. |
 | **HTML Cleaner** | Flattens a supplier's description markup into safe paragraphs. Tables, images and video survive; scripts, frames, fonts and Word leftovers do not. |
 | **Dragon Fixer** | Turns a Dragon stock export into the headerless two-column barcode/stock file the import expects. |
@@ -190,10 +190,15 @@ assets/js/
     image.js                decode, encode, crop pipeline
     sheet.js                spreadsheet worker client
     sanitize.js             HTML sanitizer
+    segment.js              background-removal client
   tools/                    one module per tool
   data/                     About copy, changelog, Hebrew strings
   workers/crop-worker-source.js  image bounds analysis
+  workers/segment-worker.js      U^2-Net inference
   vendor/                   SheetJS 0.18.5 + spreadsheet processors
+
+assets/models/u2netp.onnx   the background-removal network (4.4 MB)
+assets/vendor/onnxruntime/  ONNX Runtime Web, WebAssembly build (11 MB)
 
 legacy/aio-2_4_1.html       the previous single-file build (local only, gitignored)
 
@@ -203,9 +208,19 @@ tools/serve.ps1             local preview server
 
 ### Dependencies
 
-None at runtime. 2.x shipped React, SheetJS, DOMPurify, JSZip and FileSaver
-inside one 871 KB HTML file; 3.0 keeps only SheetJS, because parsing XLSX is not
-something worth reimplementing.
+Two, both vendored into this repository and served from this origin like any
+other asset. Neither is fetched from a CDN: an office machine may have no route
+to one, and nothing here should stop working because a third party did.
+
+- **SheetJS 0.18.5** → parsing XLSX is not worth reimplementing. Carried over
+  verbatim inside the spreadsheet worker, along with the Dragon and Price column
+  logic.
+- **ONNX Runtime Web 1.19.2 + U²-Net** → background removal, and only loaded
+  when somebody turns that option on. See
+  [Background removal](#background-removal).
+
+2.x shipped React, SheetJS, DOMPurify, JSZip and FileSaver inside one 871 KB
+HTML file. Everything but SheetJS was replaced rather than kept:
 
 - **React** → plain ES modules and direct DOM construction.
 - **DOMPurify** → `core/sanitize.js`, an allowlist sanitizer that rebuilds the
@@ -214,8 +229,33 @@ something worth reimplementing.
   WebP does not compress further, so the archive is just headers around raw
   bytes.
 - **FileSaver** → an anchor and an object URL.
-- **SheetJS 0.18.5** → kept, carried over verbatim inside the spreadsheet worker
-  along with the Dragon and Price column logic.
+### Background removal
+
+`assets/js/workers/segment-worker.js` runs U²-Net through ONNX Runtime on the
+WebAssembly backend: CPU only, single-threaded. Both of those are forced rather
+than chosen — GitHub Pages cannot send the COOP/COEP headers that
+`SharedArrayBuffer` needs, so worker threads are unavailable by definition, and
+the machines this runs on have no GPU worth using. A 320×320 forward pass costs
+roughly a second per image.
+
+`u2netp` is the small variant of U²-Net: 4.4 MB against 168 MB for the full
+network, which is what makes it shippable and fast enough on a CPU. It is
+Apache-2.0. The better-known RMBG-1.4 was rejected deliberately — its licence
+forbids commercial use, and this is a commercial catalogue.
+
+Two constants in that worker shape the result:
+
+- `KEEP_RATIO` discards blobs smaller than that fraction of the largest one,
+  which is what removes reflections and stray specks. It is deliberately not
+  1.0: a product shot is often a pair or a set, and keeping only the single
+  biggest mass silently deletes half the product.
+- `EDGE_LO` / `EDGE_HI` pull the network's soft rim apart into an edge that is
+  crisp but still anti-aliased.
+
+The model and the runtime are cached by the service worker under
+`asset-manager-model-v1`, deliberately not the versioned shell cache, so cutting
+a release does not make every machine re-fetch 16 MB. Bump that name in `sw.js`
+if the model itself is ever replaced.
 
 ### Changing a tool's behaviour
 

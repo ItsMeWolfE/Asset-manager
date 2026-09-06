@@ -5,6 +5,7 @@
 // 2.4.1 unchanged, including the alpha-edge fix.
 
 import { CROP_WORKER_SRC } from '../workers/crop-worker-source.js';
+import { segmentAlpha } from './segment.js';
 
 const ANALYSIS_TIMEOUT_MS = 60_000;
 
@@ -184,16 +185,23 @@ function edgeColour(data, w, h) {
  * Returns a Blob, or null when the image is entirely background.
  * In square mode the crop is expanded to a centred 1:1 box and any area beyond
  * the source is filled with the detected border colour.
+ *
+ * With `removeBackground` the subject is cut out first and everything else is
+ * made transparent. Bounds detection then runs over the cutout, so the crop
+ * follows the product rather than whatever the backdrop happened to reach -
+ * and in square mode the fill colour comes out transparent, because by then
+ * the border genuinely is.
  */
-export async function cropImage(file, square) {
+export async function cropImage(file, square, removeBackground = false) {
   const { source, cleanup } = await decodeImage(file);
+  let scratch = null;
 
   try {
     const width = 'naturalWidth' in source ? source.naturalWidth : source.width;
     const height = 'naturalHeight' in source ? source.naturalHeight : source.height;
     if (!width || !height) throw new Error('Invalid image dimensions');
 
-    const scratch = document.createElement('canvas');
+    scratch = document.createElement('canvas');
     scratch.width = width;
     scratch.height = height;
 
@@ -204,12 +212,32 @@ export async function cropImage(file, square) {
     scratchCtx.drawImage(source, 0, 0);
 
     const imageData = scratchCtx.getImageData(0, 0, width, height);
+
+    // Whatever the final crop is drawn from. Background removal replaces it
+    // with the masked canvas, since the original still has its backdrop.
+    let drawSource = source;
+
+    if (removeBackground) {
+      // segmentAlpha() transfers the buffer it is handed, so it gets a copy and
+      // the original stays readable for the bounds pass below.
+      const copy = new ImageData(new Uint8ClampedArray(imageData.data), width, height);
+      const alpha = await segmentAlpha(copy);
+
+      // Multiply rather than overwrite: a source PNG may already be partly
+      // transparent, and that transparency should survive.
+      const px = imageData.data;
+      for (let i = 3, a = 0; a < alpha.length; i += 4, a += 1) {
+        px[i] = (px[i] * alpha[a]) / 255;
+      }
+
+      scratchCtx.putImageData(imageData, 0, 0);
+      drawSource = scratch;
+    }
+
     const background = square ? edgeColour(imageData.data, width, height) : null;
 
     // analyse() transfers the pixel buffer, so read anything needed from it first.
     const bounds = await analyse(imageData);
-    scratch.width = 1;
-    scratch.height = 1;
 
     if (!bounds) return null;
 
@@ -247,7 +275,7 @@ export async function cropImage(file, square) {
     }
 
     if (x1 > x0 && y1 > y0) {
-      ctx.drawImage(source, x0, y0, x1 - x0, y1 - y0, x0 - sx, y0 - sy, x1 - x0, y1 - y0);
+      ctx.drawImage(drawSource, x0, y0, x1 - x0, y1 - y0, x0 - sx, y0 - sy, x1 - x0, y1 - y0);
     }
 
     const blob = await encodeCanvas(out);
@@ -255,6 +283,12 @@ export async function cropImage(file, square) {
     out.height = 1;
     return blob;
   } finally {
+    // Kept alive until here: with background removal the scratch canvas is the
+    // thing the crop is drawn from, so it cannot be released any earlier.
+    if (scratch) {
+      scratch.width = 1;
+      scratch.height = 1;
+    }
     cleanup();
   }
 }

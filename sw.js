@@ -33,6 +33,8 @@ const SHELL = [
   './assets/js/data/about.js',
   './assets/js/data/changelog.js',
   './assets/js/data/i18n-he.js',
+  './assets/js/core/segment.js',
+  './assets/js/workers/segment-worker.js',
   './assets/js/workers/crop-worker-source.js',
   './assets/js/vendor/sheet-worker-source.js',
 ];
@@ -40,6 +42,20 @@ const SHELL = [
 // "Asset Manager.html" is deliberately not precached. It is the double-click
 // launcher, meant to live on a desktop rather than be served, and it only ever
 // redirects here.
+
+// Neither is the background-removal model or the ONNX runtime beside it: ~16 MB
+// that only matters to someone who turns the option on. They get their own
+// cache, named for the model rather than the release, because they change far
+// more rarely than the app does - putting them in the versioned shell cache
+// would make every release re-download the lot. Bump this name when the model
+// itself is replaced.
+const MODEL_CACHE = 'asset-manager-model-v1';
+
+/** Heavyweight, rarely-changing assets that outlive a release. */
+function isModelAsset(url) {
+  return url.pathname.includes('/assets/models/') ||
+    url.pathname.includes('/assets/vendor/onnxruntime/');
+}
 
 const SCOPE_PATH = new URL('./', self.location).pathname;
 
@@ -108,6 +124,20 @@ self.addEventListener('fetch', (event) => {
       } catch {
         return (await caches.match('./index.html')) || (await caches.match('./')) || Response.error();
       }
+    })());
+    return;
+  }
+
+  // The model and its runtime: cache first, in the cache that survives releases.
+  if (isModelAsset(url)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(MODEL_CACHE);
+      const cached = await cache.match(request);
+      if (cached) return cached;
+
+      const response = await fetch(request);
+      if (response.ok) cache.put(request, response.clone());
+      return response;
     })());
     return;
   }

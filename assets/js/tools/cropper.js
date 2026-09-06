@@ -5,11 +5,14 @@ import { t, plural } from '../core/i18n.js';
 import { loadStored, saveStored } from '../core/prefs.js';
 import { createStatus, createLog, createDropzone, pageHead } from '../core/ui.js';
 import { cropImage, uniqueName, mapLimit, OUTPUT_EXT } from '../core/image.js';
+import { isSegmentationSupported, warmUpSegmentation } from '../core/segment.js';
 import { StoreZip, saveBlob } from '../core/files.js';
 
 const SHAPE_KEY = 'asset-manager-crop-shape-v1';
 const LEGACY_SHAPE_KEY = 'bam-crop-shape-v1';
+const BACKGROUND_KEY = 'asset-manager-crop-background-v1';
 const isShape = (v) => v === 'square' || v === 'full';
+const isBackground = (v) => v === 'keep' || v === 'remove';
 const ZIP_NAME = 'tight_cropped.zip';
 
 // ZIP mode can afford two decoders in flight. Individual downloads are kept
@@ -20,6 +23,10 @@ export function createCropper() {
   let phase = 'idle';
   let outputMode = 'zip';
   let shape = loadStored(SHAPE_KEY, isShape, loadStored(LEGACY_SHAPE_KEY, isShape, 'full'));
+  // A browser without module workers or OffscreenCanvas cannot run the model at
+  // all, so the stored preference is overridden rather than left to fail later.
+  const canCutOut = isSegmentationSupported();
+  let background = canCutOut ? loadStored(BACKGROUND_KEY, isBackground, 'keep') : 'keep';
   let runToken = 0;
 
   const status = createStatus();
@@ -27,31 +34,40 @@ export function createCropper() {
 
   const modeButtons = new Map();
   const shapeButtons = new Map();
+  const backgroundButtons = new Map();
+
+  const GROUPS = {
+    mode: { current: () => outputMode, buttons: modeButtons },
+    shape: { current: () => shape, buttons: shapeButtons },
+    background: { current: () => background, buttons: backgroundButtons },
+  };
 
   function segButton(group, value, label, iconName, onPick) {
     const button = h('button', {
       type: 'button',
-      'aria-pressed': String(group === 'mode' ? outputMode === value : shape === value),
+      'aria-pressed': String(GROUPS[group].current() === value),
       onClick: () => onPick(value),
     }, iconName ? icon(iconName, 14) : null, t(label));
 
-    (group === 'mode' ? modeButtons : shapeButtons).set(value, button);
+    GROUPS[group].buttons.set(value, button);
     return button;
   }
 
   function syncButtons() {
-    for (const [value, button] of modeButtons) {
-      button.setAttribute('aria-pressed', String(outputMode === value));
-    }
-    for (const [value, button] of shapeButtons) {
-      button.setAttribute('aria-pressed', String(shape === value));
+    for (const { current, buttons } of Object.values(GROUPS)) {
+      for (const [value, button] of buttons) {
+        button.setAttribute('aria-pressed', String(current() === value));
+      }
     }
   }
 
   function setBusy(busy) {
-    for (const button of [...modeButtons.values(), ...shapeButtons.values()]) {
-      button.disabled = busy;
+    for (const { buttons } of Object.values(GROUPS)) {
+      for (const button of buttons.values()) button.disabled = busy;
     }
+    // Stays disabled either way where the browser cannot run the model.
+    const remove = backgroundButtons.get('remove');
+    if (remove && !canCutOut) remove.disabled = true;
     dropzone.setBusy(busy);
     clearButton.disabled = busy;
   }
@@ -96,18 +112,35 @@ export function createCropper() {
 
     const zip = new StoreZip();
     const taken = new Set();
+    const cutOut = background === 'remove';
     let done = 0;
     let produced = 0;
     let skipped = 0;
 
     try {
-      await mapLimit(images, outputMode === 'zip' ? ZIP_CONCURRENCY : 1, async (file, index) => {
+      if (cutOut) {
+        status.set({
+          title: t('Loading the background model'),
+          summary: t('About 16 MB the first time. It is cached afterwards, and it runs on this computer - the images are never uploaded.'),
+        });
+        await warmUpSegmentation();
+        if (runToken !== token) return;
+        log.add(t('Background model ready.'));
+      }
+
+      // One at a time when cutting out: the model runs single-threaded on the
+      // CPU, so a second job in flight only competes for the same core.
+      const concurrency = cutOut ? 1 : (outputMode === 'zip' ? ZIP_CONCURRENCY : 1);
+
+      await mapLimit(images, concurrency, async (file, index) => {
         if (runToken !== token) return;
 
-        status.set({ title: `${t('Cropping')} ${index + 1}/${images.length}: ${file.name}` });
+        status.set({
+          title: `${cutOut ? t('Removing background') : t('Cropping')} ${index + 1}/${images.length}: ${file.name}`,
+        });
 
         try {
-          const blob = await cropImage(file, shape === 'square');
+          const blob = await cropImage(file, shape === 'square', cutOut);
           if (!blob) {
             skipped += 1;
             log.error(`${t('Skipped empty image')}: ${file.name}`);
@@ -213,6 +246,16 @@ export function createCropper() {
           segButton('shape', 'full', 'Full crop', 'crop', (value) => { shape = value; saveStored(SHAPE_KEY, value); syncButtons(); }),
           segButton('shape', 'square', 'Square (1:1)', 'layers', (value) => { shape = value; saveStored(SHAPE_KEY, value); syncButtons(); }))),
 
+      h('div', { class: 'panel__head' },
+        h('div', null,
+          h('h2', { class: 'panel__title' }, t('Background')),
+          h('p', { class: 'panel__hint' }, canCutOut
+            ? t('Remove cuts the product out and leaves everything behind it transparent, using a model that runs on this computer. Nothing is uploaded. The first run downloads about 16 MB.')
+            : t('This browser cannot run the background model: it needs module workers and OffscreenCanvas.'))),
+        h('div', { class: 'segmented', role: 'group', 'aria-label': t('Background') },
+          segButton('background', 'keep', 'Keep', 'image', (value) => { background = value; saveStored(BACKGROUND_KEY, value); syncButtons(); }),
+          segButton('background', 'remove', 'Remove', 'wand', (value) => { background = value; saveStored(BACKGROUND_KEY, value); syncButtons(); }))),
+
       dropzone.el,
       h('div', { class: 'row', style: { marginBlockStart: '16px' } }, clearButton),
     ),
@@ -220,6 +263,11 @@ export function createCropper() {
     status.el,
     log.el,
   );
+
+  if (!canCutOut) {
+    const remove = backgroundButtons.get('remove');
+    if (remove) remove.disabled = true;
+  }
 
   // Bound to the document, not to `root`: a paste with nothing focused targets
   // <body>, which never bubbles through the tool container.
