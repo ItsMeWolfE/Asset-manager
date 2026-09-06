@@ -62,6 +62,16 @@ Opening `index.html` straight off disk does **not** work: ES modules and service
 workers both need a real HTTP origin. That is the one thing 3.0 gives up in
 exchange for updating itself.
 
+### Previewing a change locally
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\serve.ps1
+```
+
+Then open <http://localhost:8123/>. It serves the repository over HTTP with no
+dependencies, which matters on a machine with no Node or Python installed.
+Ctrl+C stops it.
+
 ---
 
 ## Cutting a release
