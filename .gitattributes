@@ -1,0 +1,16 @@
+# Normalize to LF in the repository. Shell scripts and the service worker must
+# keep LF in the working tree too: CRLF breaks bash shebangs on Linux, which is
+# where release.sh and the Pages workflow run.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.yml text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.webmanifest text eol=lf
+*.md text eol=lf
+
+# The archived 2.x build is a historical artefact; leave its bytes alone.
+legacy/** -text
