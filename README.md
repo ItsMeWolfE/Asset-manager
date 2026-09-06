@@ -24,7 +24,9 @@ for.
 
 ### Hosted
 
-Open the deployed URL. That is the whole install.
+Open the deployed URL. That is the whole install. To run it from this
+repository instead — on your own machine, or on your own server — see
+[Running it locally](#running-it-locally) and [Deploying](#deploying).
 
 The app checks for a new release every time it starts. When one exists it shows
 a banner with **Update now**; one click and it reloads on the new version. There
@@ -73,6 +75,60 @@ gear menu and are saved per browser.
 
 ---
 
+## Running it locally
+
+This is the edition served from a URL, so it needs a real HTTP origin: browsers
+refuse to load ES modules and register service workers over `file://`. Any
+static file server will do, and the repository ships one that needs nothing
+installed.
+
+From the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\serve.ps1
+```
+
+Then open <http://localhost:8123/>. Ctrl+C stops it.
+
+`tools/serve.ps1` is a PowerShell `HttpListener` with no dependencies at all,
+which matters on a machine with neither Node nor Python. It serves the
+repository root, sends `Service-Worker-Allowed` and marks every response
+`no-cache`, so the offline shell and the update check behave the way they do in
+production rather than being masked by a stale cache. It logs each request,
+which is the quickest way to spot a path that 404s.
+
+Use `-Port` if 8123 is taken, or `-Root` to serve a different directory:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\serve.ps1 -Port 9000
+```
+
+Anything equivalent works just as well:
+
+```bash
+npx serve .                  # Node
+python -m http.server 8123   # Python
+```
+
+`localhost` counts as a secure context, so the service worker registers without
+a certificate. Everything works exactly as it does on the deployed site —
+offline caching, the version check, and the update banner.
+
+Two things to expect while developing:
+
+- **The service worker caches aggressively.** After editing anything under
+  `assets/`, a plain reload can still serve the cached copy. Use a hard reload,
+  or tick **Application → Service Workers → Update on reload** in DevTools.
+- **The update banner only appears when `version.json` is ahead of
+  `APP_VERSION`.** To see it, serve a copy whose `version.json` names a higher
+  version while `assets/js/core/version.js` stays put. Do not commit that —
+  `tools/release.sh` is what moves the two together.
+
+Opening `index.html` by double-clicking it does **not** work, by design. Use
+`asset-manager.html` for that; see [Two editions](#two-editions).
+
+---
+
 ## Deploying
 
 The hosted app is plain HTML, CSS and ES modules: what is in the repository is
@@ -100,13 +156,8 @@ Opening `index.html` straight off disk does **not** work — use
 
 ### Previewing a change locally
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\serve.ps1
-```
-
-Then open <http://localhost:8123/>. It serves the repository over HTTP with no
-dependencies, which matters on a machine with no Node or Python installed.
-Ctrl+C stops it.
+Serve the repository and open it over HTTP — see
+[Running it locally](#running-it-locally).
 
 ---
 
