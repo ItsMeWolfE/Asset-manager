@@ -4,7 +4,7 @@
 #
 #   tools/build-standalone.sh
 #
-# Produces bug-asset-manager.html: one self-contained file that runs by
+# Produces asset-manager.html: one self-contained file that runs by
 # double-clicking it, with no server and no network.
 #
 # Why this exists: a browser refuses to load `<script type="module" src="...">`
@@ -22,7 +22,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-OUT="bug-asset-manager.html"
+OUT="asset-manager.html"
 
 # Dependency order. Data and vendor blobs first, then core, then tools, then the
 # shell, which calls boot() on the last line.
@@ -107,7 +107,7 @@ VERSION="$(grep -oE "APP_VERSION = '[^']+'" assets/js/core/version.js | grep -oE
   echo '  <body>'
   echo '    <noscript>'
   echo '      <p style="padding: 24px; font-family: system-ui, sans-serif;">'
-  echo '        Bug Asset Manager needs JavaScript. Everything runs inside your browser;'
+  echo '        Asset Manager needs JavaScript. Everything runs inside your browser;'
   echo '        nothing is sent to a server.'
   echo '      </p>'
   echo '    </noscript>'

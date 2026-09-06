@@ -8,3 +8,6 @@ desktop.ini
 
 # release script leftovers
 *.bak
+
+# The archived 2.x build is kept locally but not published.
+legacy/

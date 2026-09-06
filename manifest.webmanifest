@@ -1,5 +1,5 @@
 {
-  "name": "Bug Asset Manager",
+  "name": "Asset Manager",
   "short_name": "Asset Manager",
   "description": "Browser-local tools for preparing product content.",
   "start_url": "./",

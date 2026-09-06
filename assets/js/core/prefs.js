@@ -3,8 +3,11 @@
 // Stored in localStorage under a single key and applied straight to the root
 // element as CSS custom properties, so every rule in app.css follows along.
 
-const KEY = 'bam-prefs-v3';
-const LEGACY_KEY = 'bam-prefs-v1';
+const KEY = 'asset-manager-prefs-v1';
+
+// Read-only fallbacks, newest first, so settings saved by an earlier build are
+// picked up once and then re-saved under the current key.
+const LEGACY_KEYS = ['bam-prefs-v3', 'bam-prefs-v1'];
 
 export const THEMES = [
   { id: 'dark', label: 'Dark', scheme: 'dark', vars: { '--bg-deep': '#090b10', '--bg-base': '#10131a', '--bg-surface': '#181d27', '--bg-border': '#2b3341', '--text-highlight': '#f4f7fb', '--text-main': '#cbd3df', '--text-muted': '#8d99aa', '--text-muted-dark': '#667184', '--accent-main': '#5b6df8', '--accent-hover': '#7181ff', '--accent-light': '#91a0ff' } },
@@ -27,12 +30,22 @@ export const SIZES = [
 const DEFAULTS = { lang: 'en', theme: 'dark', fontScale: 100, accent: null };
 
 function read() {
-  for (const key of [KEY, LEGACY_KEY]) {
+  for (const key of [KEY, ...LEGACY_KEYS]) {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
+
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') return { ...DEFAULTS, ...parsed };
+      if (!parsed || typeof parsed !== 'object') continue;
+
+      const merged = { ...DEFAULTS, ...parsed };
+
+      // Copy a legacy value forward straight away, so the current key is the
+      // one that counts from here on instead of only after the next change.
+      if (key !== KEY) {
+        try { localStorage.setItem(KEY, JSON.stringify(merged)); } catch { /* private mode */ }
+      }
+      return merged;
     } catch { /* corrupt or unavailable storage falls through to defaults */ }
   }
   return { ...DEFAULTS };

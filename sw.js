@@ -5,7 +5,7 @@
 // which is what surfaces the update prompt in the page.
 
 const CACHE_VERSION = '3.0.0';
-const CACHE_NAME = `bam-shell-${CACHE_VERSION}`;
+const CACHE_NAME = `asset-manager-shell-${CACHE_VERSION}`;
 
 // Everything needed to boot with no network.
 const SHELL = [
@@ -37,7 +37,7 @@ const SHELL = [
   './assets/js/vendor/sheet-worker-source.js',
 ];
 
-// bug-asset-manager.html is deliberately not precached. It is the standalone
+// asset-manager.html is deliberately not precached. It is the standalone
 // download, not part of the hosted app, and it would double the cache size.
 
 self.addEventListener('install', (event) => {
@@ -59,7 +59,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const names = await caches.keys();
     await Promise.all(names
-      .filter((name) => name.startsWith('bam-shell-') && name !== CACHE_NAME)
+      .filter((name) => (name.startsWith('asset-manager-shell-') || name.startsWith('bam-shell-')) && name !== CACHE_NAME)
       .map((name) => caches.delete(name)));
     await self.clients.claim();
   })());

@@ -7,7 +7,9 @@ import { createStatus, createLog, createDropzone, pageHead } from '../core/ui.js
 import { cropImage, uniqueName, mapLimit, OUTPUT_EXT } from '../core/image.js';
 import { StoreZip, saveBlob } from '../core/files.js';
 
-const SHAPE_KEY = 'bam-crop-shape-v1';
+const SHAPE_KEY = 'asset-manager-crop-shape-v1';
+const LEGACY_SHAPE_KEY = 'bam-crop-shape-v1';
+const isShape = (v) => v === 'square' || v === 'full';
 const ZIP_NAME = 'tight_cropped.zip';
 
 // ZIP mode can afford two decoders in flight. Individual downloads are kept
@@ -17,7 +19,7 @@ const ZIP_CONCURRENCY = 2;
 export function createCropper() {
   let phase = 'idle';
   let outputMode = 'zip';
-  let shape = loadStored(SHAPE_KEY, (v) => v === 'square' || v === 'full', 'full');
+  let shape = loadStored(SHAPE_KEY, isShape, loadStored(LEGACY_SHAPE_KEY, isShape, 'full'));
   let runToken = 0;
 
   const status = createStatus();

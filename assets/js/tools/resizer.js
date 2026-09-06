@@ -7,8 +7,8 @@ import { createDropzone, pageHead, toast } from '../core/ui.js';
 import { encodeCanvas, OUTPUT_EXT } from '../core/image.js';
 import { saveBlob, safeName } from '../core/files.js';
 
-const PRESET_KEY = 'bam-resizer-presets-v3';
-const LEGACY_PRESET_KEY = 'devtools-resizer-presets-v2';
+const PRESET_KEY = 'asset-manager-resizer-presets-v1';
+const LEGACY_PRESET_KEYS = ['bam-resizer-presets-v3', 'devtools-resizer-presets-v2'];
 
 const BUILT_IN = [
   { id: 'top-product', name: 'Top Product', w: 264, h: 248 },
@@ -30,7 +30,11 @@ const isPresetList = (value) => Array.isArray(value) && value.every((preset) =>
   preset.w > 0 && preset.h > 0);
 
 export function createResizer() {
-  let presets = loadStored(PRESET_KEY, isPresetList, loadStored(LEGACY_PRESET_KEY, isPresetList, BUILT_IN));
+  let presets = LEGACY_PRESET_KEYS.reduce(
+    (fallback, key) => loadStored(key, isPresetList, fallback),
+    BUILT_IN,
+  );
+  presets = loadStored(PRESET_KEY, isPresetList, presets);
   let presetId = presets[0]?.id ?? 'top-product';
   let size = { w: presets[0]?.w ?? 264, h: presets[0]?.h ?? 248 };
 

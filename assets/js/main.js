@@ -49,7 +49,7 @@ function mount(id, { focus = false } = {}) {
   currentId = tool.id;
 
   clear(content).append(current.el);
-  document.title = `${t(tool.label)} — Bug Asset Manager`;
+  document.title = `${t(tool.label)} — Asset Manager`;
 
   for (const [key, button] of navButtons) {
     if (key === tool.id) button.setAttribute('aria-current', 'page');
@@ -206,7 +206,7 @@ function boot() {
       h('div', { class: 'topbar__brand' },
         h('div', { class: 'topbar__mark' }, icon('layers', 18)),
         h('div', null,
-          h('div', { class: 'topbar__title' }, 'Bug Asset Manager'),
+          h('div', { class: 'topbar__title' }, 'Asset Manager'),
           h('div', { class: 'topbar__ver' }, `v${APP_VERSION}`))),
       h('div', { class: 'topbar__spacer' }),
       prefsPopover.el),

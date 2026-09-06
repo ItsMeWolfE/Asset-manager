@@ -1,4 +1,4 @@
-# Bug Asset Manager
+# Asset Manager
 
 Five browser-local tools for getting product content ready for the site:
 batch image cropping, precise resizing, supplier-HTML cleaning, and two
@@ -11,7 +11,7 @@ closing the tab discards all of it.
 
 ## Two editions
 
-| | Hosted (`index.html`) | Standalone (`bug-asset-manager.html`) |
+| | Hosted (`index.html`) | Standalone (`asset-manager.html`) |
 | --- | --- | --- |
 | How you open it | a URL | double-click the file |
 | Needs a server | yes | no |
@@ -35,7 +35,7 @@ so a dropped connection does not stop you working.
 
 ### Standalone
 
-`bug-asset-manager.html` is one self-contained file. Double-click it and it
+`asset-manager.html` is one self-contained file. Double-click it and it
 runs: no server, no network, nothing to install. It is the direct descendant of
 the old `aio-2_4_1.html`.
 
@@ -77,7 +77,7 @@ gear menu and are saved per browser.
 
 The hosted app is plain HTML, CSS and ES modules: what is in the repository is
 what runs, with no build step and no toolchain. The only generated file is
-`bug-asset-manager.html`, and `tools/release.sh` rebuilds it for you.
+`asset-manager.html`, and `tools/release.sh` rebuilds it for you.
 
 ### GitHub Pages
 
@@ -96,7 +96,7 @@ Copy the repository to any static web server. The only requirements are that
 `https://` (or `localhost`), because service workers need a secure context.
 
 Opening `index.html` straight off disk does **not** work — use
-`bug-asset-manager.html` for that. See [Two editions](#two-editions).
+`asset-manager.html` for that. See [Two editions](#two-editions).
 
 ### Previewing a change locally
 
@@ -119,7 +119,7 @@ git push && git push --tags
 
 The script updates every place a version lives — `assets/js/core/version.js`,
 `version.json`, the `CACHE_VERSION` in `sw.js`, and both changelogs — rebuilds
-`bug-asset-manager.html`, then commits and tags. Bumping `CACHE_VERSION` is what
+`asset-manager.html`, then commits and tags. Bumping `CACHE_VERSION` is what
 makes browsers install the new service worker, which is what surfaces the update
 prompt.
 
@@ -132,7 +132,7 @@ being told about an update that the cache then refuses to fetch.
 
 ```
 index.html                  entry point (hosted edition)
-bug-asset-manager.html      generated single-file edition - do not edit
+asset-manager.html          generated single-file edition - do not edit
 version.json                what the update check reads
 sw.js                       offline cache + update handshake
 manifest.webmanifest        installable-app metadata
@@ -156,10 +156,10 @@ assets/js/
   workers/crop-worker-source.js  image bounds analysis
   vendor/                   SheetJS 0.18.5 + spreadsheet processors
 
-legacy/aio-2_4_1.html       the previous single-file build, for reference
+legacy/aio-2_4_1.html       the previous single-file build (local only, gitignored)
 
 tools/release.sh            cut a release
-tools/build-standalone.sh   regenerate bug-asset-manager.html
+tools/build-standalone.sh   regenerate asset-manager.html
 tools/serve.ps1             local preview server
 ```
 
