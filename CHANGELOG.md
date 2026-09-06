@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.2.0 - 2026-09-06
+
+**Background removal in the Batch Cropper**
+
+The Batch Cropper can now cut the product out of its background, using a model that runs on your own computer. Nothing is uploaded and no graphics card is needed. It is off by default; turn it on with the Background control.
+
 ## 3.1.0 - 2026-09-06
 
 **Wide-screen layout fixes**
