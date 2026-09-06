@@ -9,56 +9,40 @@ closing the tab discards all of it.
 
 ---
 
-## Two editions
+## Opening it
 
-| | Hosted (`index.html`) | Standalone (`asset-manager.html`) |
-| --- | --- | --- |
-| How you open it | a URL | double-click the file |
-| Needs a server | yes | no |
-| Updates itself | **yes**, one click | no — replace the file |
-| Works offline | yes, after the first visit | yes, always |
+**Double-click `Asset Manager.html`.** That is the whole install.
 
-Both are built from the same source and behave identically. Use the hosted one
-if you want the automatic updates; that is what the whole update mechanism is
-for.
-
-### Hosted
-
-Open the deployed URL. That is the whole install. To run it from this
-repository instead — on your own machine, or on your own server — see
-[Running it locally](#running-it-locally) and [Deploying](#deploying).
+It is a one-kilobyte launcher rather than the app itself: it opens the hosted
+version at <https://itsmewolfe.github.io/Asset-manager/>. Copy it to a desktop,
+a shared drive, or an email attachment — wherever it is easiest to reach. A
+bookmark does the same job; the file exists so there is something to hand to
+someone who would rather not keep one.
 
 The app checks for a new release every time it starts. When one exists it shows
-a banner with **Update now**; one click and it reloads on the new version. There
-is nothing to download and no file to replace by hand.
+a banner with **Update now**; one click and it reloads on the new version.
+Nothing to download, no file to replace by hand.
 
-After the first visit it works offline — a service worker keeps the app cached,
-so a dropped connection does not stop you working.
+Only the first run needs a connection. After that a service worker keeps the app
+cached and it opens offline like anything else.
 
-### Standalone
+To run it from this repository instead — on your own machine, or on your own
+server — see [Running it locally](#running-it-locally) and
+[Deploying](#deploying).
 
-`asset-manager.html` is one self-contained file. Double-click it and it
-runs: no server, no network, nothing to install. It is the direct descendant of
-the old `aio-2_4_1.html`.
+> **Why the app is not one self-contained file.** It used to be, and that file
+> could never update itself: a page opened from `file://` may not register a
+> service worker or overwrite itself on disk. Every copy went stale the day it
+> was built, and the only remedy was to send everyone a new one. A launcher
+> pointing at a hosted app is the only arrangement in which one double-click and
+> an always-current version are the same thing.
+>
+> The same browser rule is why `index.html` is blank when opened from disk:
+> `<script type="module" src="...">` is treated as a cross-origin request over
+> `file://`, so nothing runs. It shows an explanation and points at the hosted
+> app rather than sitting there empty.
 
-It cannot update itself — a page opened from `file://` is not allowed to
-overwrite itself on disk, and cannot register a service worker. When a new
-version ships, download the file again.
-
-Rebuild it after changing anything under `assets/`:
-
-```bash
-tools/build-standalone.sh
-```
-
-> **Why `index.html` is blank when opened from disk:** browsers refuse to load
-> `<script type="module" src="...">` over `file://`, treating it as a
-> cross-origin request. Nothing runs, so the page stays empty. It now shows an
-> explanation instead of nothing, and points at the standalone build. This is a
-> browser rule, not something the app can work around — which is exactly why the
-> standalone build exists.
-
-### The tools
+## The tools
 
 | Tool | What it does |
 | --- | --- |
@@ -124,16 +108,16 @@ Two things to expect while developing:
   version while `assets/js/core/version.js` stays put. Do not commit that —
   `tools/release.sh` is what moves the two together.
 
-Opening `index.html` by double-clicking it does **not** work, by design. Use
-`asset-manager.html` for that; see [Two editions](#two-editions).
+Opening `index.html` by double-clicking it does **not** work, by design.
+`Asset Manager.html` is the file to double-click; see
+[Opening it](#opening-it).
 
 ---
 
 ## Deploying
 
-The hosted app is plain HTML, CSS and ES modules: what is in the repository is
-what runs, with no build step and no toolchain. The only generated file is
-`asset-manager.html`, and `tools/release.sh` rebuilds it for you.
+The app is plain HTML, CSS and ES modules: what is in the repository is what
+runs, with no build step, no toolchain and no generated files.
 
 ### GitHub Pages
 
@@ -151,8 +135,12 @@ Copy the repository to any static web server. The only requirements are that
 `sw.js` and `version.json` are served from the site root and that the origin is
 `https://` (or `localhost`), because service workers need a secure context.
 
-Opening `index.html` straight off disk does **not** work — use
-`asset-manager.html` for that. See [Two editions](#two-editions).
+If you deploy somewhere other than the URL above, update the link in
+`Asset Manager.html` to match — it is hardcoded, because a file opened from
+disk has no site to be relative to. It is the only place that URL appears.
+
+Opening `index.html` straight off disk does **not** work. See
+[Opening it](#opening-it).
 
 ### Previewing a change locally
 
@@ -169,8 +157,8 @@ git push && git push --tags
 ```
 
 The script updates every place a version lives — `assets/js/core/version.js`,
-`version.json`, the `CACHE_VERSION` in `sw.js`, and both changelogs — rebuilds
-`asset-manager.html`, then commits and tags. Bumping `CACHE_VERSION` is what
+`version.json`, the `CACHE_VERSION` in `sw.js`, and both changelogs — then
+commits and tags. Bumping `CACHE_VERSION` is what
 makes browsers install the new service worker, which is what surfaces the update
 prompt.
 
@@ -182,8 +170,8 @@ being told about an update that the cache then refuses to fetch.
 ## Layout
 
 ```
-index.html                  entry point (hosted edition)
-asset-manager.html          generated single-file edition - do not edit
+Asset Manager.html          the launcher; the file to double-click
+index.html                  the app's entry point
 version.json                what the update check reads
 sw.js                       offline cache + update handshake
 manifest.webmanifest        installable-app metadata
@@ -210,7 +198,6 @@ assets/js/
 legacy/aio-2_4_1.html       the previous single-file build (local only, gitignored)
 
 tools/release.sh            cut a release
-tools/build-standalone.sh   regenerate asset-manager.html
 tools/serve.ps1             local preview server
 ```
 

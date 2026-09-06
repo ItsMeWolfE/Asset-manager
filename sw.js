@@ -37,8 +37,16 @@ const SHELL = [
   './assets/js/vendor/sheet-worker-source.js',
 ];
 
-// asset-manager.html is deliberately not precached. It is the standalone
-// download, not part of the hosted app, and it would double the cache size.
+// "Asset Manager.html" is deliberately not precached. It is the double-click
+// launcher, meant to live on a desktop rather than be served, and it only ever
+// redirects here.
+
+const SCOPE_PATH = new URL('./', self.location).pathname;
+
+/** True only for the app's own entry point, not for other pages in scope. */
+function isAppShell(url) {
+  return url.pathname === SCOPE_PATH || url.pathname === `${SCOPE_PATH}index.html`;
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -89,8 +97,13 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       try {
         const response = await fetch(request);
-        const cache = await caches.open(CACHE_NAME);
-        cache.put('./index.html', response.clone());
+        // Only the app shell belongs under the index.html key. Any other page
+        // served from this scope - the launcher, for one - would otherwise
+        // overwrite it and be handed back in its place when offline.
+        if (isAppShell(url)) {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put('./index.html', response.clone());
+        }
         return response;
       } catch {
         return (await caches.match('./index.html')) || (await caches.match('./')) || Response.error();

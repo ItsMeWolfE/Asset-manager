@@ -67,9 +67,6 @@ tmp="$(mktemp)"
 } > "$tmp"
 mv "$tmp" CHANGELOG.md
 
-# 6. the standalone build, so the shipped file always matches the source
-bash "$ROOT/tools/build-standalone.sh"
-
 git add -A
 git commit -m "Release $VERSION: $TITLE"
 git tag -a "v$VERSION" -m "$TITLE"
