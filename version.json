@@ -1,6 +1,6 @@
 {
-  "version": "3.0.0",
+  "version": "3.1.0",
   "released": "2026-09-06",
-  "title": "Repository release with automatic updates",
-  "notes": "Rebuilt as a versioned repository with one-click updates, an offline shell, and a redesigned interface. All five tools behave exactly as they did in 2.4.1."
+  "title": "Wide-screen layout fixes",
+  "notes": "The preferences popover no longer sits open and empty under the header, tool panels that should be hidden stay hidden, and the sidebar descriptions wrap instead of running over the panel beside them."
 }

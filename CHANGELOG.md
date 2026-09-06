@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.0 - 2026-09-06
+
+**Wide-screen layout fixes**
+
+The preferences popover no longer sits open and empty under the header, tool panels that should be hidden stay hidden, and the sidebar descriptions wrap instead of running over the panel beside them.
+
 ## 3.0.0 - 2026-09-06
 
 **Repository release with automatic updates**
