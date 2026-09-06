@@ -15,8 +15,10 @@ import { APP_VERSION } from './version.js';
 import { h, icon } from './dom.js';
 import { t } from './i18n.js';
 
-const VERSION_URL = new URL('../../../version.json', import.meta.url);
-const SW_URL = new URL('../../../sw.js', import.meta.url);
+// Resolved against the page, not against this module: that keeps the single-file
+// build working and survives being hosted from a subdirectory.
+const VERSION_URL = new URL('version.json', document.baseURI);
+const SW_URL = new URL('sw.js', document.baseURI);
 const RELOAD_FALLBACK_MS = 4000;
 
 /** Compare dotted versions. Returns 1, -1 or 0. */

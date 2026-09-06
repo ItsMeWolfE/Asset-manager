@@ -1,4 +1,9 @@
-
+// Crop worker source, preserved verbatim from 2.4.1.
+//
+// Held as a string and started from a Blob so the identical code path works
+// hosted and in the single-file build. A same-origin worker file cannot be
+// loaded from file://, which is what made 2.x use a Blob worker too.
+export const CROP_WORKER_SRC = String.raw`
 const alphaTolerance = 15;
 const colorTolerance = 15;
 
@@ -184,3 +189,4 @@ self.onmessage = (event) => {
     self.postMessage({ id, error: error instanceof Error ? error.message : String(error) });
   }
 };
+`;

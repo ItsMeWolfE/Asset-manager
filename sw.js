@@ -33,9 +33,12 @@ const SHELL = [
   './assets/js/data/about.js',
   './assets/js/data/changelog.js',
   './assets/js/data/i18n-he.js',
-  './assets/js/workers/crop-worker.js',
+  './assets/js/workers/crop-worker-source.js',
   './assets/js/vendor/sheet-worker-source.js',
 ];
+
+// bug-asset-manager.html is deliberately not precached. It is the standalone
+// download, not part of the hosted app, and it would double the cache size.
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {

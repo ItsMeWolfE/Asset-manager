@@ -4,8 +4,19 @@
 // never blocks the interface. That worker's algorithm is carried over from
 // 2.4.1 unchanged, including the alpha-edge fix.
 
-const WORKER_URL = new URL('../workers/crop-worker.js', import.meta.url);
+import { CROP_WORKER_SRC } from '../workers/crop-worker-source.js';
+
 const ANALYSIS_TIMEOUT_MS = 60_000;
+
+let cropWorkerUrl = null;
+
+function cropWorkerUrlOnce() {
+  if (!cropWorkerUrl) {
+    const blob = new Blob([CROP_WORKER_SRC], { type: 'text/javascript;charset=utf-8' });
+    cropWorkerUrl = URL.createObjectURL(blob);
+  }
+  return cropWorkerUrl;
+}
 
 /** Lossless WebP where the browser supports it, PNG everywhere else. */
 export const WEBP_OK = (() => {
@@ -37,7 +48,7 @@ const pending = new Map();
 function getWorker() {
   if (worker) return worker;
 
-  worker = new Worker(WORKER_URL, { name: 'asset-crop-scanner' });
+  worker = new Worker(cropWorkerUrlOnce(), { name: 'asset-crop-scanner' });
 
   worker.onmessage = (event) => {
     const job = pending.get(event.data.id);
