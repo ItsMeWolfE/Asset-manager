@@ -7,6 +7,14 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* The `hidden` attribute is how every panel, placeholder and popover in this
+   app is shown and hidden from JS. The UA stylesheet's `[hidden] { display:
+   none }` loses to any author rule that sets `display`, so `.pop__panel`,
+   `.stack`, `.editor`, `.dropzone`, `.guide` and `.pane__placeholder` all
+   silently ignored it. Restate it here, once, so setting `.hidden` keeps
+   working no matter what a component's own display value is. */
+[hidden] { display: none !important; }
+
 :root {
   --bg-deep: #090b10;
   --bg-base: #10131a;
@@ -141,7 +149,13 @@ a { color: var(--accent-light); }
 .nav__item[aria-current="page"] .icon { color: var(--accent-main); }
 .nav__item .icon { flex: none; }
 .nav__text { display: flex; flex-direction: column; min-width: 0; }
-.nav__desc { font-size: 0.6875rem; color: var(--text-muted-dark); font-weight: 400; }
+.nav__desc {
+  font-size: 0.6875rem; color: var(--text-muted-dark); font-weight: 400;
+  /* .nav__item is nowrap so the items stay on one line in the horizontal
+     mobile rail. The description is a full sentence and has to wrap, or it
+     runs out of the 248px sidebar and over the panel beside it. */
+  white-space: normal;
+}
 @media (max-width: 900px) { .nav__desc { display: none; } }
 
 /* ---------- panels ---------------------------------------------------- */
