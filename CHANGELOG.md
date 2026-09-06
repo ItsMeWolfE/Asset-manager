@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.3.0 - 2026-09-06
+
+**Complete Hebrew translation**
+
+The interface is now fully translated: over half of it was still appearing in English when Hebrew was selected, including the whole release history. Each language now lives in its own file, so adding another one is a single file plus a single line.
+
 ## 3.2.0 - 2026-09-06
 
 **Background removal in the Batch Cropper**

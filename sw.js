@@ -4,7 +4,7 @@
 // core/version.js. Changing it is what makes the browser install a new worker,
 // which is what surfaces the update prompt in the page.
 
-const CACHE_VERSION = '3.2.0';
+const CACHE_VERSION = '3.3.0';
 const CACHE_NAME = `asset-manager-shell-${CACHE_VERSION}`;
 
 // Everything needed to boot with no network.

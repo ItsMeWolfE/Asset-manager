@@ -1,6 +1,6 @@
 {
-  "version": "3.2.0",
+  "version": "3.3.0",
   "released": "2026-09-06",
-  "title": "Background removal in the Batch Cropper",
-  "notes": "The Batch Cropper can now cut the product out of its background, using a model that runs on your own computer. Nothing is uploaded and no graphics card is needed. It is off by default; turn it on with the Background control."
+  "title": "Complete Hebrew translation",
+  "notes": "The interface is now fully translated: over half of it was still appearing in English when Hebrew was selected, including the whole release history. Each language now lives in its own file, so adding another one is a single file plus a single line."
 }
