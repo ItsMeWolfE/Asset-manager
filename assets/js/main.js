@@ -1,7 +1,7 @@
 // Application shell: navigation, preferences and tool mounting.
 
 import { h, clear, icon } from './core/dom.js';
-import { t } from './core/i18n.js';
+import { t, languages } from './core/i18n.js';
 import { prefs, setPrefs, applyPrefs, onPrefsChange, THEMES, THEME_BY_ID, SIZES } from './core/prefs.js';
 import { APP_VERSION } from './core/version.js';
 import { initUpdates } from './core/update.js';
@@ -141,8 +141,11 @@ function buildPrefs() {
       h('section', { class: 'pop__section' },
         h('h3', null, t('Language')),
         h('div', { class: 'grid-2' },
-          chip('English', prefs.lang === 'en', () => setPrefs({ lang: 'en' })),
-          chip('עברית', prefs.lang === 'he', () => setPrefs({ lang: 'he' })))),
+          ...languages().map((language) => chip(
+            language.name,
+            prefs.lang === language.code,
+            () => setPrefs({ lang: language.code }),
+          )))),
 
       h('section', { class: 'pop__section' },
         h('h3', null, t('Theme')),

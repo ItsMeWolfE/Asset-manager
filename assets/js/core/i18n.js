@@ -1,14 +1,17 @@
 // Translation lookup.
 //
 // English strings are the keys, so an untranslated string still renders as
-// readable English instead of a missing-key placeholder.
+// readable English instead of a missing-key placeholder. Which languages exist
+// is decided entirely by assets/js/i18n/index.js; nothing here knows about any
+// particular one.
 
-import { HE } from '../data/i18n-he.js';
+import { languageFor, LANGUAGES } from '../i18n/index.js';
 import { prefs } from './prefs.js';
 
+const active = () => languageFor(prefs.lang);
+
 export function t(text) {
-  if (prefs.lang !== 'he') return text;
-  return HE[text] ?? text;
+  return active().strings[text] ?? text;
 }
 
 /** Interpolate `{name}` placeholders after translating the template. */
@@ -24,4 +27,7 @@ export function plural(count, one, many) {
   return `${count} ${t(word)}`;
 }
 
-export const isRTL = () => prefs.lang === 'he';
+/** Every language on offer, for the preferences picker. */
+export const languages = () => LANGUAGES;
+
+export const isRTL = () => active().dir === 'rtl';

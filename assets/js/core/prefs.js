@@ -3,6 +3,8 @@
 // Stored in localStorage under a single key and applied straight to the root
 // element as CSS custom properties, so every rule in app.css follows along.
 
+import { languageFor } from '../i18n/index.js';
+
 const KEY = 'asset-manager-prefs-v1';
 
 // Read-only fallbacks, newest first, so settings saved by an earlier build are
@@ -94,8 +96,11 @@ export function applyPrefs() {
   root.style.setProperty('--font-scale', `${prefs.fontScale}%`);
   root.dataset.scheme = theme.scheme;
   root.dataset.theme = theme.id;
-  root.lang = prefs.lang;
-  root.dir = prefs.lang === 'he' ? 'rtl' : 'ltr';
+  // Direction comes from the language definition, so a future right-to-left
+  // language works without touching this file.
+  const language = languageFor(prefs.lang);
+  root.lang = language.code;
+  root.dir = language.dir;
 }
 
 /**

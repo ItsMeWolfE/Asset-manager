@@ -44,7 +44,8 @@ function renderSection(section) {
 }
 
 export function createAbout() {
-  const data = ABOUT[prefs.lang === 'he' ? 'he' : 'en'] || ABOUT.en;
+  // Falls back to English for a language with no documentation written yet.
+  const data = ABOUT[prefs.lang] || ABOUT.en;
 
   const root = h('div', { class: 'stack' },
     pageHead('info', t('About'), t('How each tool works, from start to finish.')),
@@ -62,8 +63,8 @@ export function createAbout() {
           h('p', { class: 'panel__hint' }, `${t('Running version')} ${APP_VERSION}`))),
       h('div', null, ...CHANGELOG.map((entry) => h('article', { class: 'release' },
         h('div', { class: 'release__ver' }, entry.version),
-        h('div', { class: 'release__title' }, entry.title),
-        h('p', { class: 'release__body' }, entry.description))))),
+        h('div', { class: 'release__title' }, t(entry.title)),
+        h('p', { class: 'release__body' }, t(entry.description)))))),
   );
 
   return { el: root, destroy() {} };
