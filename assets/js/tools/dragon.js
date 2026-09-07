@@ -8,13 +8,11 @@ import { t, plural } from '../core/i18n.js';
 import { createStatus, createLog, createDropzone, pageHead } from '../core/ui.js';
 import { runSheetJob, isSpreadsheet, XLSX_MIME } from '../core/sheet.js';
 import { saveBlob } from '../core/files.js';
-import { loadStored, saveStored } from '../core/prefs.js';
-
-const FILTER_KEY = 'asset-manager-dragon-filter-v1';
-const isFilter = (v) => v === 'all' || v === 'in' || v === 'out';
 
 export function createDragon() {
-  let filter = loadStored(FILTER_KEY, isFilter, 'all');
+  // Deliberately not persisted: this tool is reached rarely, and a filter
+  // remembered from weeks ago would quietly shape a different export.
+  let filter = 'all';
   let busy = false;
 
   const status = createStatus();
@@ -27,7 +25,6 @@ export function createDragon() {
       'aria-pressed': String(filter === value),
       onClick: () => {
         filter = value;
-        saveStored(FILTER_KEY, value);
         for (const [key, btn] of filterButtons) btn.setAttribute('aria-pressed', String(filter === key));
       },
     }, iconName ? icon(iconName, 14) : null, t(label));

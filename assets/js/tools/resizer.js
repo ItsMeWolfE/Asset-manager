@@ -39,7 +39,7 @@ const isPresetList = (value) => Array.isArray(value) && value.every((preset) =>
   Number.isInteger(preset.w) && Number.isInteger(preset.h) &&
   preset.w > 0 && preset.h > 0);
 
-export function createResizer() {
+export function createResizer(carried = null) {
   let presets = LEGACY_PRESET_KEYS.reduce(
     (fallback, key) => loadStored(key, isPresetList, fallback),
     BUILT_IN,
@@ -52,14 +52,17 @@ export function createResizer() {
   let presetId = opening?.id ?? 'top-product';
   let size = { w: opening?.w ?? 264, h: opening?.h ?? 248 };
 
-  let image = null;
-  let baseName = 'image';
-  let scale = 1;
-  let position = { x: 0, y: 0 };
+  let image = carried?.image ?? null;
+  let baseName = carried?.baseName ?? 'image';
+  let scale = carried?.scale ?? 1;
+  let position = carried?.position ? { ...carried.position } : { x: 0, y: 0 };
   const storedBackground = loadStored(BACKGROUND_KEY, isBackground, null);
   let transparent = storedBackground ? storedBackground.transparent : true;
   let background = storedBackground ? storedBackground.colour : '#ffffff';
-  let objectUrl = null;
+  let objectUrl = carried?.objectUrl ?? null;
+  // Set once this instance's object URL belongs to a successor, so destroy does
+  // not revoke a URL the next instance is still showing.
+  let handedOver = false;
 
   const canvas = h('canvas', { width: size.w, height: size.h });
   const guideV = h('div', { class: 'guide guide--v' });
@@ -428,15 +431,27 @@ export function createResizer() {
   document.addEventListener('paste', onPaste);
 
   renderPresets();
+  // selectPreset re-frames the image, which would discard a carried scale and
+  // position, so those are restored after it rather than before.
   selectPreset(presetId);
+  if (image) {
+    scale = carried.scale;
+    position = { ...carried.position };
+    scaleInput.value = String(Math.round(scale * 100));
+    scaleLabel.textContent = `${Math.round(scale * 100)}%`;
+  }
   syncCanvasBox();
   updateLoadedState();
 
   return {
     el: root,
+    getState() {
+      handedOver = true;
+      return { image, baseName, scale, position, objectUrl };
+    },
     destroy() {
       document.removeEventListener('paste', onPaste);
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (objectUrl && !handedOver) URL.revokeObjectURL(objectUrl);
     },
   };
 }

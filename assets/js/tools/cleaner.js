@@ -299,8 +299,8 @@ async function copyRich(html) {
   await navigator.clipboard.writeText(html);
 }
 
-export function createCleaner() {
-  let source = '';
+export function createCleaner(carried = null) {
+  let source = carried?.source ?? '';
   let output = '';
   let inputView = loadStored(INPUT_VIEW_KEY, isView, 'visual');
   let outputView = loadStored(OUTPUT_VIEW_KEY, isView, 'visual');
@@ -368,12 +368,14 @@ export function createCleaner() {
     }
   }
 
-  const schedule = debounce(() => {
+  function renderOutput() {
     output = transformHtml(source);
     setSanitizedHTML(visualOutput, output);
     codeOutput.value = output;
     syncPlaceholders();
-  }, PREVIEW_DEBOUNCE_MS);
+  }
+
+  const schedule = debounce(renderOutput, PREVIEW_DEBOUNCE_MS);
 
   function syncPlaceholders() {
     inputPlaceholder.hidden = Boolean(source) || inputView !== 'visual';
@@ -469,10 +471,14 @@ export function createCleaner() {
 
   setInputView(inputView);
   setOutputView(outputView);
-  syncPlaceholders();
+  // Carried text is already in the input by now; the output pane is rebuilt at
+  // once rather than after the debounce, so the rebuild is not visible.
+  if (source) renderOutput();
+  else syncPlaceholders();
 
   return {
     el: root,
+    getState() { return { source }; },
     destroy() { schedule.cancel(); },
   };
 }

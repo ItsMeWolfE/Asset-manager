@@ -39,13 +39,13 @@ function toolIdFromHash() {
   return TOOLS.some((tool) => tool.id === id) ? id : DEFAULT_TOOL;
 }
 
-function mount(id, { focus = false } = {}) {
+function mount(id, { focus = false, carried = null } = {}) {
   const tool = TOOLS.find((entry) => entry.id === id) || TOOLS[0];
 
   if (currentId === tool.id && current) return;
 
   current?.destroy?.();
-  current = tool.create();
+  current = tool.create(carried);
   currentId = tool.id;
 
   clear(content).append(current.el);
@@ -65,11 +65,18 @@ function mount(id, { focus = false } = {}) {
   }
 }
 
-/** Re-create the running tool, e.g. after a language change. */
+/**
+ * Re-create the running tool after a language change.
+ *
+ * A language change is not a navigation: the tool is rebuilt where it stands,
+ * so whatever the user had entered has to come across with it. Only this path
+ * carries state - switching tools by hand still starts clean, as before.
+ */
 function remount() {
   const id = currentId;
+  const carried = current?.getState?.() ?? null;
   currentId = null;
-  mount(id || DEFAULT_TOOL);
+  mount(id || DEFAULT_TOOL, { carried });
 }
 
 // ---------------------------------------------------------------------------

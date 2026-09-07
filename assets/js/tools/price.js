@@ -62,10 +62,10 @@ function gridFromText(text) {
 const MODE_KEY = 'asset-manager-price-mode-v1';
 const isMode = (v) => v === 'file' || v === 'paste';
 
-export function createPrice() {
+export function createPrice(carried = null) {
   let mode = loadStored(MODE_KEY, isMode, 'file');
   let busy = false;
-  let pastedGrid = null;
+  let pastedGrid = carried?.grid ?? null;
 
   const status = createStatus();
   const log = createLog();
@@ -195,19 +195,22 @@ export function createPrice() {
         event.preventDefault();
         pastedGrid = grid;
         pasteArea.value = grid.slice(0, 40).map((row) => row.join('\t')).join('\n');
-        pasteInfo.textContent = `${plural(grid.length, 'row', 'rows')} × ${plural(grid[0].length, 'column', 'columns')} ${t('ready.')}`;
-        generateButton.disabled = false;
+        syncPasteInfo();
       }
     },
     onInput: () => {
       const grid = gridFromText(pasteArea.value);
       pastedGrid = grid && grid.length ? grid : null;
-      pasteInfo.textContent = pastedGrid
-        ? `${plural(pastedGrid.length, 'row', 'rows')} × ${plural(pastedGrid[0].length, 'column', 'columns')} ${t('ready.')}`
-        : t('Nothing pasted yet.');
-      generateButton.disabled = !pastedGrid;
+      syncPasteInfo();
     },
   });
+
+  function syncPasteInfo() {
+    pasteInfo.textContent = pastedGrid
+      ? `${plural(pastedGrid.length, 'row', 'rows')} × ${plural(pastedGrid[0].length, 'column', 'columns')} ${t('ready.')}`
+      : t('Nothing pasted yet.');
+    generateButton.disabled = !pastedGrid;
+  }
 
   const generateButton = h('button', {
     type: 'button', class: 'btn', disabled: true,
@@ -256,6 +259,12 @@ export function createPrice() {
   );
 
   setMode(mode);
+  if (carried?.text) pasteArea.value = carried.text;
+  syncPasteInfo();
 
-  return { el: root, destroy() {} };
+  return {
+    el: root,
+    getState() { return { grid: pastedGrid, text: pasteArea.value }; },
+    destroy() {},
+  };
 }
