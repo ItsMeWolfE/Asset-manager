@@ -4,7 +4,7 @@ import { h, clear, icon } from './core/dom.js';
 import { t, languages } from './core/i18n.js';
 import { prefs, setPrefs, applyPrefs, onPrefsChange, THEMES, THEME_BY_ID, SIZES } from './core/prefs.js';
 import { APP_VERSION } from './core/version.js';
-import { initUpdates } from './core/update.js';
+import { initUpdates, refreshUpdateBanner } from './core/update.js';
 
 import { createCropper } from './tools/cropper.js';
 import { createResizer } from './tools/resizer.js';
@@ -245,6 +245,8 @@ function boot() {
     if (changed.includes('lang')) {
       rebuildNavLabels();
       remount();
+      // The banner sits outside the tool panel, so remount does not reach it.
+      refreshUpdateBanner();
     }
   });
 

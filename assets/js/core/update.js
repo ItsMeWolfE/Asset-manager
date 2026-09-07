@@ -11,6 +11,11 @@
 //  3. The service worker precaches the shell. When a new one installs it waits,
 //     and we surface that as the same banner.
 //
+// The check repeats while the app is open, so an update deployed mid-session is
+// offered without waiting for a reload. Nothing is ever applied on its own: the
+// banner lives outside the tool panel, so offering an update leaves whatever the
+// user is working on exactly where it was, and only their click reloads.
+//
 // Either way the user gets one prompt and one button. Nothing has to be
 // downloaded or replaced by hand.
 
@@ -23,6 +28,12 @@ import { t } from './i18n.js';
 const VERSION_URL = new URL('version.json', document.baseURI);
 const SW_URL = new URL('sw.js', document.baseURI);
 const RELOAD_FALLBACK_MS = 4000;
+
+// A minute, not seconds. version.json is a few hundred bytes, but nothing
+// deploys often enough for a tighter loop to find anything, and the checks that
+// actually feel instant are the event-driven ones below: returning to the tab,
+// or coming back online, check straight away.
+const POLL_MS = 60_000;
 
 /** Compare dotted versions. Returns 1, -1 or 0. */
 export function compareVersions(a, b) {
@@ -45,7 +56,19 @@ export function compareVersions(a, b) {
 let banner = null;
 let applying = false;
 let deployed = null;
+let registration = null;
 const pending = new Set();
+
+// Which update the banner is offering, and which one the user waved away. Both
+// matter only because the check now repeats: without them a banner would be
+// rebuilt under the user's cursor every minute, and "Later" would last exactly
+// until the next tick.
+let announced = null;
+let dismissed = null;
+
+// What the current banner was built from, so a language change can rebuild it in
+// the new language. It sits outside the tool panel, so remounting misses it.
+let shown = null;
 
 /**
  * What version.json last reported, or null if the check has not landed yet.
@@ -72,8 +95,14 @@ export function onDeployedRelease(fn) {
   return () => pending.delete(fn);
 }
 
-function showBanner({ version, notes, onApply }) {
+/**
+ * Build the banner. `note` is text from version.json and is shown as it came;
+ * `noteKey` is one of our own strings and is translated at render time, so a
+ * language change can rebuild the banner rather than leave it in the old one.
+ */
+function showBanner({ version, note, noteKey }) {
   banner?.remove();
+  shown = { version, note, noteKey };
 
   const button = h('button', {
     type: 'button',
@@ -83,24 +112,57 @@ function showBanner({ version, notes, onApply }) {
       applying = true;
       button.disabled = true;
       button.textContent = t('Updating…');
-      onApply();
+      applyServiceWorkerUpdate();
     },
   }, icon('download', 14), t('Update now'));
+
+  const text = noteKey ? t(noteKey) : note;
 
   banner = h('div', { class: 'update', role: 'status' },
     h('div', { class: 'update__text' },
       h('div', { class: 'update__title' },
         version ? `${t('Version')} ${version} ${t('is available')}` : t('An update is available')),
-      notes ? h('div', { class: 'update__note' }, notes) : null),
+      text ? h('div', { class: 'update__note' }, text) : null),
     button,
     h('button', {
       type: 'button',
       class: 'btn btn--ghost',
-      onClick: () => { banner?.remove(); banner = null; },
+      onClick: () => {
+        // Remembered, so the next tick a minute later does not undo the click.
+        // Anything newer than this carries a different target and still gets
+        // through.
+        dismissed = announced;
+        announced = null;
+        shown = null;
+        banner?.remove();
+        banner = null;
+      },
     }, t('Later')),
   );
 
   document.querySelector('.update-slot')?.replaceChildren(banner);
+}
+
+/**
+ * Offer an update once. `target` names the update itself rather than how it was
+ * spotted, so the same deploy found by the version check and by the service
+ * worker is one offer, and one dismissal covers both.
+ *
+ * Returns whether this call put something new on screen.
+ */
+function offer(target, options) {
+  if (applying || target === announced || target === dismissed) return false;
+  announced = target;
+  showBanner(options);
+  return true;
+}
+
+/**
+ * Rebuild the banner in the current language. The banner sits outside the tool
+ * panel, so main.js's remount does not reach it.
+ */
+export function refreshUpdateBanner() {
+  if (banner && shown && !applying) showBanner(shown);
 }
 
 /** Reload, defeating any intermediate HTTP cache. */
@@ -152,7 +214,68 @@ async function fetchLatest() {
 }
 
 /**
- * Register the service worker and check for a newer release.
+ * One check: ask what is deployed, tell anyone waiting, and offer what is new.
+ *
+ * Never throws and never touches the page beyond the banner slot, because this
+ * runs on a timer underneath whatever the user is doing.
+ */
+async function check() {
+  let latest;
+  try {
+    latest = await fetchLatest();
+  } catch {
+    // Offline, or version.json is not deployed yet. The app keeps working, and
+    // the next tick will try again.
+    return;
+  }
+
+  deployed = latest;
+  pending.forEach((fn) => fn(latest));
+  pending.clear();
+
+  let fresh = false;
+  if (compareVersions(latest.version, APP_VERSION) > 0) {
+    fresh = offer(`v${latest.version}`, {
+      version: latest.version,
+      note: latest.title || latest.notes || '',
+    });
+  } else if (latest.build && BUILD_ID && latest.build !== BUILD_ID) {
+    // Same release, different files: a push that was not cut as a release.
+    // Worth offering, but not worth announcing as a new version - there is no
+    // release note to show, because there was no release.
+    fresh = offer(`b${latest.build}`, {
+      noteKey: 'This release was rebuilt since your copy was cached.',
+    });
+  }
+
+  // Only once there is something to fetch: let the worker start precaching it
+  // now, so "Update now" applies immediately instead of beginning the download
+  // at the click. Skipping it otherwise keeps the idle cost to one small
+  // request a minute.
+  if (fresh) registration?.update().catch(() => {});
+}
+
+/** The service worker found an update; name it the same as the version check would. */
+function offerFromWorker(noteKey) {
+  offer(deployed?.build ? `b${deployed.build}` : 'sw', { noteKey });
+}
+
+/**
+ * Check on a timer, and immediately on the two events that mean a check is
+ * likely to be worth something: the tab coming back to the foreground, and the
+ * connection returning. A hidden tab is skipped - there is nobody to show a
+ * banner to, and it would only be found again the moment it is looked at.
+ */
+function startPolling() {
+  const tick = () => { if (!document.hidden) check(); };
+
+  window.setInterval(tick, POLL_MS);
+  document.addEventListener('visibilitychange', tick);
+  window.addEventListener('online', tick);
+}
+
+/**
+ * Register the service worker, check for a newer release, and keep checking.
  * Safe to call unconditionally: it does nothing harmful on file:// or offline.
  */
 export async function initUpdates() {
@@ -161,13 +284,13 @@ export async function initUpdates() {
 
   if ('serviceWorker' in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register(SW_URL, {
+      registration = await navigator.serviceWorker.register(SW_URL, {
         scope: new URL('./', SW_URL).pathname,
       });
 
       // A worker already waiting means an update downloaded on a previous visit.
       if (registration.waiting && navigator.serviceWorker.controller) {
-        showBanner({ version: null, notes: t('A newer version has already been downloaded.'), onApply: applyServiceWorkerUpdate });
+        offerFromWorker('A newer version has already been downloaded.');
       }
 
       registration.addEventListener('updatefound', () => {
@@ -177,7 +300,7 @@ export async function initUpdates() {
         installing.addEventListener('statechange', () => {
           // `controller` is null on the very first install; that is not an update.
           if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-            showBanner({ version: null, notes: t('A new version has been downloaded and is ready.'), onApply: applyServiceWorkerUpdate });
+            offerFromWorker('A new version has been downloaded and is ready.');
           }
         });
       });
@@ -187,29 +310,6 @@ export async function initUpdates() {
     }
   }
 
-  try {
-    const latest = await fetchLatest();
-    deployed = latest;
-    pending.forEach((fn) => fn(latest));
-    pending.clear();
-
-    if (compareVersions(latest.version, APP_VERSION) > 0) {
-      showBanner({
-        version: latest.version,
-        notes: latest.title || latest.notes || '',
-        onApply: applyServiceWorkerUpdate,
-      });
-    } else if (latest.build && BUILD_ID && latest.build !== BUILD_ID) {
-      // Same release, different files: a push that was not cut as a release.
-      // Worth offering, but not worth announcing as a new version - there is no
-      // release note to show, because there was no release.
-      showBanner({
-        version: null,
-        notes: t('This release was rebuilt since your copy was cached.'),
-        onApply: applyServiceWorkerUpdate,
-      });
-    }
-  } catch {
-    // Offline, or the file is not deployed yet. The app keeps working.
-  }
+  await check();
+  startPolling();
 }
