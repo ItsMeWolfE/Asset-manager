@@ -65,6 +65,12 @@ function isAppShell(url) {
   return url.pathname === SCOPE_PATH || url.pathname === `${SCOPE_PATH}index.html`;
 }
 
+/** The precached shell, read from this release's cache only. */
+async function cachedShell() {
+  const cache = await caches.open(CACHE_NAME);
+  return (await cache.match('./index.html')) || (await cache.match('./'));
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
@@ -108,22 +114,37 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigations: network first, so a deployed update is picked up on reload,
-  // with the cached shell as the offline fallback.
+  // Navigations: cache first, like every other asset. The precached shell is
+  // the local copy of the app, so launching it reaches the network for nothing
+  // but version.json - online or off, on the desktop or in an installed window.
+  //
+  // Releases still arrive. The browser revalidates sw.js on navigation whatever
+  // this handler answers with; a changed CACHE_VERSION installs a new worker,
+  // which precaches the next shell under a new cache name and prompts through
+  // core/update.js. Accepting that prompt activates it, drops the old cache in
+  // `activate`, and reloads - and this lookup then finds the new shell.
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
+      // Only the app's own entry point is answered from the shell cache. Other
+      // pages served from this scope - the launcher, for one - are not the app
+      // and must not be handed index.html in their place.
+      if (isAppShell(url)) {
+        const cached = await cachedShell();
+        if (cached) return cached;
+      }
+
       try {
         const response = await fetch(request);
-        // Only the app shell belongs under the index.html key. Any other page
-        // served from this scope - the launcher, for one - would otherwise
-        // overwrite it and be handed back in its place when offline.
-        if (isAppShell(url)) {
+        // Cache only a real shell response. Storing an error page under the
+        // index.html key used to self-correct on the next online load; now that
+        // this lookup comes first, it would be served until the next release.
+        if (isAppShell(url) && response.ok) {
           const cache = await caches.open(CACHE_NAME);
           cache.put('./index.html', response.clone());
         }
         return response;
       } catch {
-        return (await caches.match('./index.html')) || (await caches.match('./')) || Response.error();
+        return (await cachedShell()) || Response.error();
       }
     })());
     return;
