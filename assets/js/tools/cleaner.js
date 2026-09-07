@@ -479,6 +479,8 @@ export function createCleaner(carried = null) {
   return {
     el: root,
     getState() { return { source }; },
+    // Text crosses a reload intact, so the same state serves both.
+    getPortableState() { return { source }; },
     destroy() { schedule.cancel(); },
   };
 }

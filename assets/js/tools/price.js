@@ -265,6 +265,9 @@ export function createPrice(carried = null) {
   return {
     el: root,
     getState() { return { grid: pastedGrid, text: pasteArea.value }; },
+    // A grid of strings and the text behind it are both JSON, so they survive
+    // the reload that applying an update performs.
+    getPortableState() { return { grid: pastedGrid, text: pasteArea.value }; },
     destroy() {},
   };
 }

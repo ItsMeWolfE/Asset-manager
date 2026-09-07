@@ -57,6 +57,7 @@ let banner = null;
 let applying = false;
 let deployed = null;
 let registration = null;
+let beforeReload = null;
 const pending = new Set();
 
 // Which update the banner is offering, and which one the user waved away. Both
@@ -165,8 +166,19 @@ export function refreshUpdateBanner() {
   if (banner && shown && !applying) showBanner(shown);
 }
 
-/** Reload, defeating any intermediate HTTP cache. */
+/**
+ * Reload, defeating any intermediate HTTP cache.
+ *
+ * Every path that applies an update ends here, so this is the one place that has
+ * to give the app a chance to save what the user was doing. Best effort: a
+ * failure here must not stop the update.
+ */
 function hardReload() {
+  try {
+    beforeReload?.();
+  } catch {
+    // Nothing carried. Still reload - the update is the point.
+  }
   window.location.reload();
 }
 
@@ -277,8 +289,13 @@ function startPolling() {
 /**
  * Register the service worker, check for a newer release, and keep checking.
  * Safe to call unconditionally: it does nothing harmful on file:// or offline.
+ *
+ * `beforeReload` runs immediately before applying an update reloads the page,
+ * for saving anything that should survive it.
  */
-export async function initUpdates() {
+export async function initUpdates({ beforeReload: onBeforeReload = null } = {}) {
+  beforeReload = onBeforeReload;
+
   const online = window.location.protocol === 'http:' || window.location.protocol === 'https:';
   if (!online) return;
 

@@ -31,9 +31,17 @@ let currentId = null;
 //
 // A tool is torn down whenever you leave it and rebuilt when you return - and
 // again in place when the language changes - so without somewhere to put it,
-// anything you had entered would go with it. Held in memory only: a reload
-// still starts clean, which is what a reload is for.
+// anything you had entered would go with it.
+//
+// Each entry is { live, portable }. `live` is the full state and never leaves
+// memory; it can hold things no reload could survive, like a decoded image.
+// `portable` is the part a tool says can be written down, which is what crosses
+// the reload that applying an update performs.
 const stashed = new Map();
+
+// Where that portable half waits while the page reloads. Per tab, and consumed
+// on the way back in, so it carries work across exactly one reload.
+const CARRY_KEY = 'asset-manager-carry-v1';
 
 const navButtons = new Map();
 const content = h('main', { class: 'stack', id: 'tool-panel', tabIndex: -1 });
@@ -41,6 +49,64 @@ const content = h('main', { class: 'stack', id: 'tool-panel', tabIndex: -1 });
 // ---------------------------------------------------------------------------
 // Tool mounting
 // ---------------------------------------------------------------------------
+
+/** Record both halves of a tool's state, skipping whichever it does not offer. */
+function stash(id, tool) {
+  const live = tool.getState?.();
+  const portable = tool.getPortableState?.();
+  if (live || portable) stashed.set(id, { live, portable });
+}
+
+/**
+ * Write the portable half of the stash where a reload can find it. Called just
+ * before applying an update, which reloads the page.
+ *
+ * Only what a tool says can be written down: the Smart Resizer's image cannot,
+ * so it offers nothing and comes back empty on the other side.
+ */
+function carryThroughReload() {
+  // The mounted tool is still running, so it is not in the stash yet.
+  if (current && currentId) stash(currentId, current);
+
+  const carry = {};
+  for (const [id, entry] of stashed) {
+    if (entry.portable) carry[id] = entry.portable;
+  }
+  if (!Object.keys(carry).length) return;
+
+  try {
+    sessionStorage.setItem(CARRY_KEY, JSON.stringify(carry));
+  } catch {
+    // Private mode, or more than the quota allows. Carrying work is a courtesy,
+    // never a precondition for updating.
+  }
+}
+
+/** Pick up whatever the reload before this one left, and consume it. */
+function restoreCarried() {
+  let raw = null;
+  try {
+    raw = sessionStorage.getItem(CARRY_KEY);
+    sessionStorage.removeItem(CARRY_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+
+  try {
+    const carry = JSON.parse(raw);
+    if (!carry || typeof carry !== 'object') return;
+
+    for (const [id, state] of Object.entries(carry)) {
+      // Ignore anything naming a tool this build no longer has.
+      if (state && TOOLS.some((tool) => tool.id === id)) {
+        stashed.set(id, { live: state, portable: state });
+      }
+    }
+  } catch {
+    // Corrupt entry; start clean rather than fail to boot.
+  }
+}
 
 function toolIdFromHash() {
   const id = window.location.hash.replace(/^#\/?/, '');
@@ -56,13 +122,10 @@ function mount(id, { focus = false, force = false } = {}) {
 
   // Take the outgoing tool's work with us before it is destroyed, and give the
   // incoming one whatever it left behind last time.
-  if (current && currentId) {
-    const state = current.getState?.();
-    if (state) stashed.set(currentId, state);
-  }
+  if (current && currentId) stash(currentId, current);
 
   current?.destroy?.();
-  current = tool.create(stashed.get(tool.id) ?? null);
+  current = tool.create(stashed.get(tool.id)?.live ?? null);
   currentId = tool.id;
 
   clear(content).append(current.el);
@@ -252,8 +315,9 @@ function boot() {
 
   window.addEventListener('hashchange', () => mount(toolIdFromHash(), { focus: true }));
 
+  restoreCarried();
   mount(toolIdFromHash());
-  initUpdates();
+  initUpdates({ beforeReload: carryThroughReload });
 }
 
 function rebuildNavLabels() {
