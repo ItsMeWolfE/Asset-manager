@@ -52,6 +52,7 @@ jobs:
           check assets/js/core/version.js "^export const BUILD_ID = 'dev';$"
           check sw.js "^// build: dev$"
           check version.json '^  "build": "dev",$'
+          check version.json '^  "built": "dev",$'
 
   deploy:
     needs: check
@@ -81,11 +82,19 @@ jobs:
           sed -i -E "s|^// build: .*|// build: $build|" sw.js
           sed -i -E "s|\"build\": \"[^\"]*\"|\"build\": \"$build\"|" version.json
 
+          # When this deploy ran. version.json only - never sw.js, or a
+          # docs-only push would change the worker's bytes and prompt everyone,
+          # which is exactly what hashing the content is here to avoid.
+          built=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          sed -i -E "s|\"built\": \"[^\"]*\"|\"built\": \"$built\"|" version.json
+          echo "Built $built"
+
           # A silent sed no-match would ship 'dev' forever, and the mismatch it
           # is meant to reveal would be the one thing it could never show.
           grep -q "^export const BUILD_ID = '$build';" assets/js/core/version.js
           grep -q "^// build: $build" sw.js
           grep -q "\"build\": \"$build\"" version.json
+          grep -q "\"built\": \"$built\"" version.json
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

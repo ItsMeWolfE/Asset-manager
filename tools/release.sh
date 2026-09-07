@@ -59,6 +59,7 @@ cat > version.json <<JSON
 {
   "version": "$VERSION",
   "build": "dev",
+  "built": "dev",
   "released": "$TODAY",
   "title": "$TITLE",
   "notes": "$NOTES"

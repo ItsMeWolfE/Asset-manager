@@ -449,6 +449,7 @@ input[type="color"] {
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .row--between { justify-content: space-between; }
 .muted { color: var(--text-muted); font-size: 0.75rem; }
+.buildinfo { display: flex; flex-direction: column; gap: 2px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
 .error-text { color: var(--err); font-size: 0.75rem; }
 

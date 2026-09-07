@@ -33,19 +33,41 @@ function renderGroup(group) {
     ...group.items.map((item) => h('p', null, item)));
 }
 
-/**
- * The running version and build, plus the deployed build when it differs -
- * which is the whole point: two copies can report 3.3.0 and still be running
- * different code. A mismatch means this copy is cached and an update is
- * waiting; the banner above offers it.
- */
-function versionLine() {
-  const line = `${t('Running version')} ${APP_VERSION} · ${t('build')} ${BUILD_ID}`;
-  const build = deployedRelease()?.build;
+/** An ISO timestamp in the reader's own locale and zone, or null if unusable. */
+function formatStamp(iso) {
+  const at = new Date(iso ?? '');
+  if (Number.isNaN(at.getTime())) return null;
 
-  return build && build !== BUILD_ID
-    ? `${line} · ${t('deployed build')} ${build}`
-    : line;
+  // Deliberately not dateStyle/timeStyle: mixing those with timeZoneName throws,
+  // and a deploy time without a zone is a time you cannot act on.
+  return at.toLocaleString(prefs.lang, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  });
+}
+
+/**
+ * What the server last published, when, and whether this copy matches it.
+ *
+ * The point of the pair: two copies can both report 3.3.0 and still be running
+ * different code, so the version alone cannot answer "am I current". The build
+ * ids can, and version.json is never cached, so the comparison is against what
+ * the server has right now rather than whenever this copy was cached.
+ */
+function buildLines() {
+  const deployed = deployedRelease();
+  const when = formatStamp(deployed?.built);
+
+  const latest = deployed?.build
+    ? `${t('Latest build')} ${deployed.build}${when ? ` · ${t('pushed')} ${when}` : ''}`
+    : t('The server could not be reached, so the latest build is unknown.');
+
+  let running = `${t('Running build')} ${BUILD_ID}`;
+  if (deployed?.build) {
+    running += ` — ${deployed.build === BUILD_ID ? t('this copy is up to date.') : t('an update is waiting.')}`;
+  }
+
+  return [latest, running];
 }
 
 function renderSection(section) {
@@ -63,9 +85,10 @@ export function createAbout() {
   // Falls back to English for a language with no documentation written yet.
   const data = ABOUT[prefs.lang] || ABOUT.en;
 
-  // Held onto so the version check can refresh it if it lands after this panel
-  // is built.
-  const hint = h('p', { class: 'panel__hint' }, versionLine());
+  // Repainted if the version check lands after this panel is built.
+  const foot = h('div', { class: 'muted buildinfo' });
+  const paintFoot = () => foot.replaceChildren(...buildLines().map((line) => h('p', null, line)));
+  paintFoot();
 
   const root = h('div', { class: 'stack' },
     pageHead('info', t('About'), t('How each tool works, from start to finish.')),
@@ -80,14 +103,16 @@ export function createAbout() {
       h('div', { class: 'panel__head' },
         h('div', null,
           h('h2', { class: 'panel__title' }, t('Release history')),
-          hint)),
+          h('p', { class: 'panel__hint' }, `${t('Running version')} ${APP_VERSION}`))),
       h('div', null, ...CHANGELOG.map((entry) => h('article', { class: 'release' },
         h('div', { class: 'release__ver' }, entry.version),
         h('div', { class: 'release__title' }, t(entry.title)),
         h('p', { class: 'release__body' }, t(entry.description)))))),
+
+    foot,
   );
 
-  const stopWaiting = onDeployedRelease(() => { hint.textContent = versionLine(); });
+  const stopWaiting = onDeployedRelease(paintFoot);
 
   return { el: root, destroy() { stopWaiting(); } };
 }

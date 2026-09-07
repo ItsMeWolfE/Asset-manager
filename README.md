@@ -118,9 +118,10 @@ something tells the browser to install a new service worker. The build id is wha
 tells it.
 
 `.github/workflows/pages.yml` stamps one into `assets/js/core/version.js`,
-`version.json` and `sw.js` on every deploy. It is a short hash of the files that
-actually ship, taken before anything is stamped, so it is a property of the
-content rather than of the run:
+`version.json` and `sw.js` on every deploy, along with the deploy time in
+`version.json`. The id is a short hash of the files that actually ship, taken
+before anything is stamped, so it is a property of the content rather than of
+the run:
 
 - **A docs-only push** hashes to the same id, leaves `sw.js` byte-identical, and
   reaches nobody. No worker, no prompt for a README edit.
@@ -133,11 +134,28 @@ change is worth naming: that is what gives it a version number, a changelog
 entry and a note in the update prompt. A build id is a fingerprint, not a
 release.
 
-In the repository the stamp is always the placeholder `dev` — a committed id
-would be a stale copy of some earlier deploy, and the Pages workflow fails if it
-finds anything else. **About → Release history** shows the running build, and
-the deployed one beside it when they differ, which is the quickest way to tell
-whether the copy in front of you is current.
+The deploy time is stamped into `version.json` only, never `sw.js` — a timestamp
+in the worker would change its bytes on every deploy and prompt everyone, which
+is the thing hashing the content is here to avoid. It therefore records when the
+site was last deployed, which for an unchanged build id may be later than when
+that build was first published.
+
+In the repository both stamps are the placeholder `dev` — a committed one would
+be a stale copy of some earlier deploy, and the Pages workflow fails if it finds
+anything else.
+
+The foot of the **About** page reads the pair back:
+
+```
+Latest build a1b2c3d · pushed Sep 7, 2026, 4:42 PM GMT+3
+Running build a1b2c3d — this copy is up to date.
+```
+
+`version.json` is never cached, so the top line is what the server has right
+now, in the reader's own timezone. When the two ids differ the second line says
+an update is waiting; with no connection the top line says so instead. That
+comparison, not the version number, is the answer to "am I running current
+code".
 
 ---
 
