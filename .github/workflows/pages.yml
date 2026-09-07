@@ -36,6 +36,23 @@ jobs:
             exit 1
           fi
 
+      # The build id is stamped at deploy time, so a committed one would be a
+      # stale copy of some earlier deploy. It must be the placeholder here, or
+      # the hash below would be taken over a file that already carries an id.
+      # Matched exactly, not as a loose "dev" - a release note mentioning a
+      # developer would otherwise satisfy the check for version.json.
+      - name: Build ids must be unstamped
+        run: |
+          check() {
+            if ! grep -qE "$2" "$1"; then
+              echo "::error::$1 has no 'dev' build placeholder for the deploy step to stamp."
+              exit 1
+            fi
+          }
+          check assets/js/core/version.js "^export const BUILD_ID = 'dev';$"
+          check sw.js "^// build: dev$"
+          check version.json '^  "build": "dev",$'
+
   deploy:
     needs: check
     runs-on: ubuntu-latest
@@ -44,6 +61,32 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      # Give this deploy an id, so a copy running in someone's browser can say
+      # which one it came from - and so the app notices a push that was never
+      # cut as a release.
+      #
+      # The id is a hash of the files that ship, taken from the checkout before
+      # anything is stamped, which makes it reproducible rather than a per-run
+      # value. Two consequences, both wanted: a docs-only push produces the same
+      # id, leaves sw.js byte-identical and so prompts nobody; and any change to
+      # the app changes sw.js, which is what installs a new worker.
+      - name: Stamp the build id
+        run: |
+          build=$(git ls-files -z index.html sw.js manifest.webmanifest version.json assets \
+            | xargs -0 sha1sum | sha1sum | cut -c1-7)
+          echo "Build $build"
+
+          sed -i -E "s|^export const BUILD_ID = '.*';|export const BUILD_ID = '$build';|" assets/js/core/version.js
+          sed -i -E "s|^// build: .*|// build: $build|" sw.js
+          sed -i -E "s|\"build\": \"[^\"]*\"|\"build\": \"$build\"|" version.json
+
+          # A silent sed no-match would ship 'dev' forever, and the mismatch it
+          # is meant to reveal would be the one thing it could never show.
+          grep -q "^export const BUILD_ID = '$build';" assets/js/core/version.js
+          grep -q "^// build: $build" sw.js
+          grep -q "\"build\": \"$build\"" version.json
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

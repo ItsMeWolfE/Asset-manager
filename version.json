@@ -1,5 +1,6 @@
 {
   "version": "3.3.0",
+  "build": "dev",
   "released": "2026-09-06",
   "title": "Complete Hebrew translation",
   "notes": "The interface is now fully translated: over half of it was still appearing in English when Hebrew was selected, including the whole release history. Each language now lives in its own file, so adding another one is a single file plus a single line."

@@ -6,7 +6,8 @@ import { prefs } from '../core/prefs.js';
 import { pageHead } from '../core/ui.js';
 import { ABOUT } from '../data/about.js';
 import { CHANGELOG } from '../data/changelog.js';
-import { APP_VERSION } from '../core/version.js';
+import { APP_VERSION, BUILD_ID } from '../core/version.js';
+import { deployedRelease, onDeployedRelease } from '../core/update.js';
 
 // The documentation data uses the 2.x icon names.
 const ICON_MAP = {
@@ -32,6 +33,21 @@ function renderGroup(group) {
     ...group.items.map((item) => h('p', null, item)));
 }
 
+/**
+ * The running version and build, plus the deployed build when it differs -
+ * which is the whole point: two copies can report 3.3.0 and still be running
+ * different code. A mismatch means this copy is cached and an update is
+ * waiting; the banner above offers it.
+ */
+function versionLine() {
+  const line = `${t('Running version')} ${APP_VERSION} · ${t('build')} ${BUILD_ID}`;
+  const build = deployedRelease()?.build;
+
+  return build && build !== BUILD_ID
+    ? `${line} · ${t('deployed build')} ${build}`
+    : line;
+}
+
 function renderSection(section) {
   return h('section', { class: 'panel' },
     h('div', { class: 'page-head' },
@@ -47,6 +63,10 @@ export function createAbout() {
   // Falls back to English for a language with no documentation written yet.
   const data = ABOUT[prefs.lang] || ABOUT.en;
 
+  // Held onto so the version check can refresh it if it lands after this panel
+  // is built.
+  const hint = h('p', { class: 'panel__hint' }, versionLine());
+
   const root = h('div', { class: 'stack' },
     pageHead('info', t('About'), t('How each tool works, from start to finish.')),
 
@@ -60,12 +80,14 @@ export function createAbout() {
       h('div', { class: 'panel__head' },
         h('div', null,
           h('h2', { class: 'panel__title' }, t('Release history')),
-          h('p', { class: 'panel__hint' }, `${t('Running version')} ${APP_VERSION}`))),
+          hint)),
       h('div', null, ...CHANGELOG.map((entry) => h('article', { class: 'release' },
         h('div', { class: 'release__ver' }, entry.version),
         h('div', { class: 'release__title' }, t(entry.title)),
         h('p', { class: 'release__body' }, t(entry.description)))))),
   );
 
-  return { el: root, destroy() {} };
+  const stopWaiting = onDeployedRelease(() => { hint.textContent = versionLine(); });
+
+  return { el: root, destroy() { stopWaiting(); } };
 }

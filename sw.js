@@ -5,6 +5,14 @@
 // which is what surfaces the update prompt in the page.
 
 const CACHE_VERSION = '3.3.0';
+
+// Stamped by the Pages workflow with the same build id as core/version.js. It
+// is here purely so the worker's bytes change whenever the shipped files do:
+// that is what makes the browser install a new worker, and so what lets a plain
+// push reach people instead of waiting for the next release. The id is a hash
+// of the shipped files, so a docs-only push leaves this line - and this worker -
+// untouched.
+// build: dev
 const CACHE_NAME = `asset-manager-shell-${CACHE_VERSION}`;
 
 // Everything needed to boot with no network.

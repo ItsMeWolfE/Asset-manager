@@ -5,13 +5,16 @@
 //  1. version.json is fetched on every start with `cache: 'no-store'`, so the
 //     app always learns about a new release immediately, even if the service
 //     worker has not noticed yet.
-//  2. The service worker precaches the shell. When a new one installs it waits,
+//  2. version.json also carries a build id, which changes whenever the shipped
+//     files do. That catches a deploy that was never cut as a release, which a
+//     version comparison alone cannot see.
+//  3. The service worker precaches the shell. When a new one installs it waits,
 //     and we surface that as the same banner.
 //
 // Either way the user gets one prompt and one button. Nothing has to be
 // downloaded or replaced by hand.
 
-import { APP_VERSION } from './version.js';
+import { APP_VERSION, BUILD_ID } from './version.js';
 import { h, icon } from './dom.js';
 import { t } from './i18n.js';
 
@@ -41,6 +44,33 @@ export function compareVersions(a, b) {
 
 let banner = null;
 let applying = false;
+let deployed = null;
+const pending = new Set();
+
+/**
+ * What version.json last reported, or null if the check has not landed yet.
+ * The About panel reads this to show the deployed build beside the running one.
+ */
+export function deployedRelease() {
+  return deployed;
+}
+
+/**
+ * Run `fn` when the version check lands, or right away if it already has.
+ * Returns an unsubscribe function, for a caller's `destroy()`.
+ *
+ * Without this a panel built during the check would show no deployed build and
+ * never correct itself - and a check still in flight is exactly when the answer
+ * is worth having.
+ */
+export function onDeployedRelease(fn) {
+  if (deployed) {
+    fn(deployed);
+    return () => {};
+  }
+  pending.add(fn);
+  return () => pending.delete(fn);
+}
 
 function showBanner({ version, notes, onApply }) {
   banner?.remove();
@@ -159,10 +189,23 @@ export async function initUpdates() {
 
   try {
     const latest = await fetchLatest();
+    deployed = latest;
+    pending.forEach((fn) => fn(latest));
+    pending.clear();
+
     if (compareVersions(latest.version, APP_VERSION) > 0) {
       showBanner({
         version: latest.version,
         notes: latest.title || latest.notes || '',
+        onApply: applyServiceWorkerUpdate,
+      });
+    } else if (latest.build && BUILD_ID && latest.build !== BUILD_ID) {
+      // Same release, different files: a push that was not cut as a release.
+      // Worth offering, but not worth announcing as a new version - there is no
+      // release note to show, because there was no release.
+      showBanner({
+        version: null,
+        notes: t('This release was rebuilt since your copy was cached.'),
         onApply: applyServiceWorkerUpdate,
       });
     }

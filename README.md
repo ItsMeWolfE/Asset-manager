@@ -97,20 +97,47 @@ Two things to expect while developing:
 
 ## How updates reach people
 
-Two mechanisms, backing each other up:
+Three mechanisms, backing each other up:
 
 1. `version.json` is fetched on every start with `cache: 'no-store'`. If it
    names a higher version than the running one, the app shows a banner with
    **Update now**.
-2. The service worker precaches the app. When a new one installs it waits, and
+2. `version.json` also carries a **build id**. If it differs from the running
+   one, the app offers the update the same way. This is what catches a push
+   that was never cut as a release, which a version comparison alone cannot
+   see — both copies say `3.3.0`.
+3. The service worker precaches the app. When a new one installs it waits, and
    that surfaces as the same banner.
 
 Either way it is one prompt and one button. Nothing is downloaded by hand.
 
-This is also why a code change alone is not enough to reach anyone: assets are
-served cache-first from a versioned cache, so an existing user keeps the old
-files until `CACHE_VERSION` changes. **Ship user-visible changes as a release,
-not a bare push.**
+### Build ids
+
+Everything is served cache-first, so a running copy keeps its cached files until
+something tells the browser to install a new service worker. The build id is what
+tells it.
+
+`.github/workflows/pages.yml` stamps one into `assets/js/core/version.js`,
+`version.json` and `sw.js` on every deploy. It is a short hash of the files that
+actually ship, taken before anything is stamped, so it is a property of the
+content rather than of the run:
+
+- **A docs-only push** hashes to the same id, leaves `sw.js` byte-identical, and
+  reaches nobody. No worker, no prompt for a README edit.
+- **Any change under `assets/`, or to `index.html`, `sw.js` or the manifest**
+  changes the id, which changes `sw.js`, which installs a new worker and offers
+  the update.
+
+So a bare push of app code does now reach people. Cut a release anyway when the
+change is worth naming: that is what gives it a version number, a changelog
+entry and a note in the update prompt. A build id is a fingerprint, not a
+release.
+
+In the repository the stamp is always the placeholder `dev` — a committed id
+would be a stale copy of some earlier deploy, and the Pages workflow fails if it
+finds anything else. **About → Release history** shows the running build, and
+the deployed one beside it when they differ, which is the quickest way to tell
+whether the copy in front of you is current.
 
 ---
 
@@ -168,7 +195,9 @@ root as-is, after checking that the three version numbers agree.
 `https://` or `localhost`, because service workers need a secure context. If you
 deploy somewhere new, update the URL in `Asset Manager.html`; it is hardcoded,
 because a file opened from disk has no site to be relative to, and it is the
-only place that URL appears.
+only place that URL appears. Build stamping lives in the Pages workflow, so a
+deployment made any other way reports `dev` and reaches running copies only on a
+version bump; port the stamping step if you want the same behaviour.
 
 ---
 
@@ -182,7 +211,8 @@ git push && git push --tags
 The script moves every place a version lives — `assets/js/core/version.js`,
 `version.json`, the `CACHE_VERSION` in `sw.js`, and both changelogs — then
 commits and tags. Bumping `CACHE_VERSION` is what makes browsers install the new
-service worker, which is what surfaces the update prompt.
+service worker, which is what surfaces the update prompt. It rewrites the build
+stamps back to `dev`; the deploy stamps them for real.
 
 Never edit those numbers by hand. If they drift apart the Pages workflow fails
 the deploy, which is the intended outcome: clients would otherwise be told about

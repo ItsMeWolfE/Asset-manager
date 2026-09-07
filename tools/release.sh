@@ -34,12 +34,31 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 # 1. the version the running app reports
-printf '// Single source of truth for the running version.\n//\n// release.sh keeps this value, version.json and the sw.js cache name in step.\n// Nothing else in the app should hardcode a version number.\nexport const APP_VERSION = '"'"'%s'"'"';\n' "$VERSION" > assets/js/core/version.js
+#
+# BUILD_ID is rewritten back to the placeholder on purpose: the deploy workflow
+# stamps it, so anything committed here would be a stale copy of some earlier
+# deploy.
+cat > assets/js/core/version.js <<JS
+// Single source of truth for the running version.
+//
+// release.sh keeps this value, version.json and the sw.js cache name in step.
+// Nothing else in the app should hardcode a version number.
+export const APP_VERSION = '$VERSION';
+
+// Which deploy this copy came from, stamped by .github/workflows/pages.yml
+// with a hash of the files that actually ship. Two copies reporting the same
+// APP_VERSION but different BUILD_IDs are running different code.
+//
+// Stays 'dev' in the repository and in any local checkout, which is the honest
+// answer for files that were never deployed.
+export const BUILD_ID = 'dev';
+JS
 
 # 2. what the update check reads
 cat > version.json <<JSON
 {
   "version": "$VERSION",
+  "build": "dev",
   "released": "$TODAY",
   "title": "$TITLE",
   "notes": "$NOTES"
