@@ -9,6 +9,7 @@ import { t, plural } from '../core/i18n.js';
 import { createStatus, createLog, createDropzone, pageHead } from '../core/ui.js';
 import { runSheetJob, isSpreadsheet, XLSX_MIME } from '../core/sheet.js';
 import { saveBlob } from '../core/files.js';
+import { loadStored, saveStored } from '../core/prefs.js';
 
 /**
  * Square off a ragged grid: trim trailing blank rows, then pad every row to the
@@ -58,8 +59,11 @@ function gridFromText(text) {
   return normalizeGrid(rows);
 }
 
+const MODE_KEY = 'asset-manager-price-mode-v1';
+const isMode = (v) => v === 'file' || v === 'paste';
+
 export function createPrice() {
-  let mode = 'file';
+  let mode = loadStored(MODE_KEY, isMode, 'file');
   let busy = false;
   let pastedGrid = null;
 
@@ -226,7 +230,7 @@ export function createPrice() {
     const button = h('button', {
       type: 'button',
       'aria-pressed': String(mode === value),
-      onClick: () => setMode(value),
+      onClick: () => { setMode(value); saveStored(MODE_KEY, value); },
     }, icon(iconName, 14), t(label));
     modeButtons.set(value, button);
     return button;
@@ -251,7 +255,7 @@ export function createPrice() {
     log.el,
   );
 
-  setMode('file');
+  setMode(mode);
 
   return { el: root, destroy() {} };
 }

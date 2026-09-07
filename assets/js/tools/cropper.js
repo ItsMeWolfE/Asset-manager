@@ -11,8 +11,10 @@ import { StoreZip, saveBlob } from '../core/files.js';
 const SHAPE_KEY = 'asset-manager-crop-shape-v1';
 const LEGACY_SHAPE_KEY = 'bam-crop-shape-v1';
 const BACKGROUND_KEY = 'asset-manager-crop-background-v1';
+const MODE_KEY = 'asset-manager-crop-mode-v1';
 const isShape = (v) => v === 'square' || v === 'full';
 const isBackground = (v) => v === 'keep' || v === 'remove';
+const isMode = (v) => v === 'zip' || v === 'single';
 const ZIP_NAME = 'tight_cropped.zip';
 
 // ZIP mode can afford two decoders in flight. Individual downloads are kept
@@ -21,7 +23,7 @@ const ZIP_CONCURRENCY = 2;
 
 export function createCropper() {
   let phase = 'idle';
-  let outputMode = 'zip';
+  let outputMode = loadStored(MODE_KEY, isMode, 'zip');
   let shape = loadStored(SHAPE_KEY, isShape, loadStored(LEGACY_SHAPE_KEY, isShape, 'full'));
   // A browser without module workers or OffscreenCanvas cannot run the model at
   // all, so the stored preference is overridden rather than left to fail later.
@@ -235,8 +237,8 @@ export function createCropper() {
           h('p', { class: 'panel__hint' },
             `${t('Output is')} ${OUTPUT_EXT.toUpperCase()} ${t('with transparency preserved; only the download packaging differs.')}`)),
         h('div', { class: 'segmented', role: 'group', 'aria-label': t('Download mode') },
-          segButton('mode', 'zip', 'ZIP archive', 'archive', (value) => { outputMode = value; syncButtons(); }),
-          segButton('mode', 'single', 'Individual files', 'download', (value) => { outputMode = value; syncButtons(); }))),
+          segButton('mode', 'zip', 'ZIP archive', 'archive', (value) => { outputMode = value; saveStored(MODE_KEY, value); syncButtons(); }),
+          segButton('mode', 'single', 'Individual files', 'download', (value) => { outputMode = value; saveStored(MODE_KEY, value); syncButtons(); }))),
 
       h('div', { class: 'panel__head' },
         h('div', null,

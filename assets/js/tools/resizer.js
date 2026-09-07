@@ -9,6 +9,8 @@ import { saveBlob, safeName } from '../core/files.js';
 
 const PRESET_KEY = 'asset-manager-resizer-presets-v1';
 const LEGACY_PRESET_KEYS = ['bam-resizer-presets-v3', 'devtools-resizer-presets-v2'];
+const SELECTED_KEY = 'asset-manager-resizer-preset-v1';
+const BACKGROUND_KEY = 'asset-manager-resizer-background-v1';
 
 const BUILT_IN = [
   { id: 'top-product', name: 'Top Product', w: 264, h: 248 },
@@ -23,6 +25,14 @@ const MIN_SCALE = 0.1;
 const MAX_SCALE = 5;
 const PREVIEW_MAX = 680;
 
+const isPresetId = (value) => typeof value === 'string' && value.length > 0;
+
+// Stored as one object so the swatch and the transparent/colour choice can
+// never disagree after a partial write.
+const isBackground = (value) => value && typeof value === 'object' &&
+  typeof value.transparent === 'boolean' &&
+  typeof value.colour === 'string' && /^#[0-9a-f]{6}$/i.test(value.colour);
+
 const isPresetList = (value) => Array.isArray(value) && value.every((preset) =>
   preset && typeof preset === 'object' &&
   typeof preset.id === 'string' && typeof preset.name === 'string' &&
@@ -35,15 +45,20 @@ export function createResizer() {
     BUILT_IN,
   );
   presets = loadStored(PRESET_KEY, isPresetList, presets);
-  let presetId = presets[0]?.id ?? 'top-product';
-  let size = { w: presets[0]?.w ?? 264, h: presets[0]?.h ?? 248 };
+  // A stored id can name a preset that has since been deleted or reset away,
+  // so it is honoured only while it still exists.
+  const storedId = loadStored(SELECTED_KEY, isPresetId, null);
+  const opening = presets.find((preset) => preset.id === storedId) ?? presets[0];
+  let presetId = opening?.id ?? 'top-product';
+  let size = { w: opening?.w ?? 264, h: opening?.h ?? 248 };
 
   let image = null;
   let baseName = 'image';
   let scale = 1;
   let position = { x: 0, y: 0 };
-  let transparent = true;
-  let background = '#ffffff';
+  const storedBackground = loadStored(BACKGROUND_KEY, isBackground, null);
+  let transparent = storedBackground ? storedBackground.transparent : true;
+  let background = storedBackground ? storedBackground.colour : '#ffffff';
   let objectUrl = null;
 
   const canvas = h('canvas', { width: size.w, height: size.h });
@@ -227,6 +242,7 @@ export function createResizer() {
     const preset = presets.find((entry) => entry.id === id);
     if (!preset) return;
     presetId = id;
+    saveStored(SELECTED_KEY, id);
     size = { w: preset.w, h: preset.h };
     widthInput.value = String(preset.w);
     heightInput.value = String(preset.h);
@@ -262,6 +278,7 @@ export function createResizer() {
       presets = [...presets, preset];
       saveStored(PRESET_KEY, presets);
       presetId = preset.id;
+      saveStored(SELECTED_KEY, preset.id);
       size = { w, h: hgt };
       nameInput.value = '';
       renderPresets();
@@ -306,18 +323,22 @@ export function createResizer() {
 
   const bgColorInput = h('input', {
     type: 'color', value: background, 'aria-label': t('Background colour'),
-    onInput: () => { background = bgColorInput.value; transparent = false; syncBgButtons(); render(); },
+    onInput: () => { background = bgColorInput.value; transparent = false; saveBackground(); syncBgButtons(); render(); },
   });
 
   const transparentButton = h('button', {
-    type: 'button', 'aria-pressed': 'true',
-    onClick: () => { transparent = true; syncBgButtons(); render(); },
+    type: 'button', 'aria-pressed': String(transparent),
+    onClick: () => { transparent = true; saveBackground(); syncBgButtons(); render(); },
   }, t('Transparent'));
 
   const colourButton = h('button', {
-    type: 'button', 'aria-pressed': 'false',
-    onClick: () => { transparent = false; syncBgButtons(); render(); },
+    type: 'button', 'aria-pressed': String(!transparent),
+    onClick: () => { transparent = false; saveBackground(); syncBgButtons(); render(); },
   }, t('Colour'));
+
+  function saveBackground() {
+    saveStored(BACKGROUND_KEY, { transparent, colour: background });
+  }
 
   function syncBgButtons() {
     transparentButton.setAttribute('aria-pressed', String(transparent));

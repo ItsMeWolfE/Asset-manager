@@ -8,8 +8,12 @@ import { h, icon, debounce } from '../core/dom.js';
 import { t } from '../core/i18n.js';
 import { sanitize, setSanitizedHTML } from '../core/sanitize.js';
 import { pageHead, toast } from '../core/ui.js';
+import { loadStored, saveStored } from '../core/prefs.js';
 
 const PREVIEW_DEBOUNCE_MS = 250;
+const INPUT_VIEW_KEY = 'asset-manager-cleaner-input-view-v1';
+const OUTPUT_VIEW_KEY = 'asset-manager-cleaner-output-view-v1';
+const isView = (v) => v === 'visual' || v === 'code';
 
 // Structural elements that become paragraph breaks.
 const BLOCKS = new Set(['ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DD', 'DIV',
@@ -298,8 +302,8 @@ async function copyRich(html) {
 export function createCleaner() {
   let source = '';
   let output = '';
-  let inputView = 'visual';
-  let outputView = 'visual';
+  let inputView = loadStored(INPUT_VIEW_KEY, isView, 'visual');
+  let outputView = loadStored(OUTPUT_VIEW_KEY, isView, 'visual');
 
   const visualInput = h('div', {
     class: 'editor rich',
@@ -400,13 +404,13 @@ export function createCleaner() {
   const inputViewButtons = new Map();
   const outputViewButtons = new Map();
 
-  function viewToggle(map, current, onPick, label) {
+  function viewToggle(map, current, onPick, label, key) {
     const group = h('div', { class: 'segmented', role: 'group', 'aria-label': label });
     for (const value of ['visual', 'code']) {
       const button = h('button', {
         type: 'button',
         'aria-pressed': String(current === value),
-        onClick: () => onPick(value),
+        onClick: () => { onPick(value); saveStored(key, value); },
       }, t(value === 'visual' ? 'Visual' : 'Code'));
       map.set(value, button);
       group.append(button);
@@ -451,20 +455,20 @@ export function createCleaner() {
       h('section', { class: 'pane' },
         h('header', { class: 'pane__head' },
           h('h2', { class: 'pane__title' }, icon('settings', 14), t('Input')),
-          viewToggle(inputViewButtons, inputView, setInputView, t('Input view'))),
+          viewToggle(inputViewButtons, inputView, setInputView, t('Input view'), INPUT_VIEW_KEY)),
         h('div', { class: 'pane__body' }, visualInput, codeInput, inputPlaceholder)),
 
       h('section', { class: 'pane' },
         h('header', { class: 'pane__head' },
           h('h2', { class: 'pane__title' }, icon('type', 14), t('Output')),
           h('div', { class: 'row' },
-            viewToggle(outputViewButtons, outputView, setOutputView, t('Output view')),
+            viewToggle(outputViewButtons, outputView, setOutputView, t('Output view'), OUTPUT_VIEW_KEY),
             copyButton)),
         h('div', { class: 'pane__body' }, visualOutput, codeOutput, outputPlaceholder))),
   );
 
-  setInputView('visual');
-  setOutputView('visual');
+  setInputView(inputView);
+  setOutputView(outputView);
   syncPlaceholders();
 
   return {
