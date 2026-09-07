@@ -27,6 +27,14 @@ const DEFAULT_TOOL = 'cropper';
 let current = null;
 let currentId = null;
 
+// Work in progress belonging to tools that are not mounted right now.
+//
+// A tool is torn down whenever you leave it and rebuilt when you return - and
+// again in place when the language changes - so without somewhere to put it,
+// anything you had entered would go with it. Held in memory only: a reload
+// still starts clean, which is what a reload is for.
+const stashed = new Map();
+
 const navButtons = new Map();
 const content = h('main', { class: 'stack', id: 'tool-panel', tabIndex: -1 });
 
@@ -39,13 +47,22 @@ function toolIdFromHash() {
   return TOOLS.some((tool) => tool.id === id) ? id : DEFAULT_TOOL;
 }
 
-function mount(id, { focus = false, carried = null } = {}) {
+function mount(id, { focus = false, force = false } = {}) {
   const tool = TOOLS.find((entry) => entry.id === id) || TOOLS[0];
 
-  if (currentId === tool.id && current) return;
+  // Clicking the tool you are already on does nothing. `force` is for a
+  // language change, which has to rebuild that very tool.
+  if (!force && currentId === tool.id && current) return;
+
+  // Take the outgoing tool's work with us before it is destroyed, and give the
+  // incoming one whatever it left behind last time.
+  if (current && currentId) {
+    const state = current.getState?.();
+    if (state) stashed.set(currentId, state);
+  }
 
   current?.destroy?.();
-  current = tool.create(carried);
+  current = tool.create(stashed.get(tool.id) ?? null);
   currentId = tool.id;
 
   clear(content).append(current.el);
@@ -66,17 +83,11 @@ function mount(id, { focus = false, carried = null } = {}) {
 }
 
 /**
- * Re-create the running tool after a language change.
- *
- * A language change is not a navigation: the tool is rebuilt where it stands,
- * so whatever the user had entered has to come across with it. Only this path
- * carries state - switching tools by hand still starts clean, as before.
+ * Re-create the running tool after a language change, so the new strings take
+ * effect. The stash carries the work across, exactly as it does for navigation.
  */
 function remount() {
-  const id = currentId;
-  const carried = current?.getState?.() ?? null;
-  currentId = null;
-  mount(id || DEFAULT_TOOL, { carried });
+  mount(currentId || DEFAULT_TOOL, { force: true });
 }
 
 // ---------------------------------------------------------------------------

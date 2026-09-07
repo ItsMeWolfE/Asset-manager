@@ -60,8 +60,10 @@ export function createResizer(carried = null) {
   let transparent = storedBackground ? storedBackground.transparent : true;
   let background = storedBackground ? storedBackground.colour : '#ffffff';
   let objectUrl = carried?.objectUrl ?? null;
-  // Set once this instance's object URL belongs to a successor, so destroy does
-  // not revoke a URL the next instance is still showing.
+  // Set once the object URL has been handed to main.js's stash, which holds it
+  // for whenever this tool is mounted again. Revoking it in destroy would break
+  // the image the next instance restores. At most one is ever live: loading
+  // another image revokes the previous one, as does starting over.
   let handedOver = false;
 
   const canvas = h('canvas', { width: size.w, height: size.h });
