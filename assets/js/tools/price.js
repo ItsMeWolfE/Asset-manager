@@ -5,11 +5,23 @@
 // or a pasted table) and reports what the worker decided.
 
 import { h, icon } from '../core/dom.js';
-import { t, plural } from '../core/i18n.js';
+import { t, tf, plural } from '../core/i18n.js';
 import { createStatus, createLog, createDropzone, pageHead } from '../core/ui.js';
 import { runSheetJob, isSpreadsheet, XLSX_MIME } from '../core/sheet.js';
 import { saveBlob } from '../core/files.js';
 import { loadStored, saveStored } from '../core/prefs.js';
+
+/**
+ * Clipboard cells arrive with invisible baggage: non-breaking spaces, the
+ * direction marks a Hebrew table is full of, and - when a cell holds more than
+ * one paragraph - newlines. A tab or a newline inside a cell would tear the
+ * grid apart when the table is written back into the textarea, so every run of
+ * whitespace is collapsed to a single space and the direction marks are
+ * dropped rather than carried into the exported item codes.
+ */
+const BIDI_MARKS = /[\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g;
+
+const cleanCell = (value) => String(value ?? '').replace(BIDI_MARKS, '').replace(/\s+/g, ' ').trim();
 
 /**
  * Square off a ragged grid: trim trailing blank rows, then pad every row to the
@@ -18,8 +30,7 @@ import { loadStored, saveStored } from '../core/prefs.js';
 function normalizeGrid(rows) {
   if (!Array.isArray(rows)) return [];
 
-  const grid = rows.map((row) => (Array.isArray(row) ? row : [row])
-    .map((cell) => String(cell ?? '').replace(/ /g, ' ').trim()));
+  const grid = rows.map((row) => (Array.isArray(row) ? row : [row]).map(cleanCell));
 
   while (grid.length && grid[grid.length - 1].every((cell) => !cell)) grid.pop();
   if (!grid.length) return [];
@@ -35,21 +46,77 @@ function normalizeGrid(rows) {
   return grid.map((row) => Array.from({ length: widest + 1 }, (_, i) => row[i] ?? ''));
 }
 
-/** Pull a grid out of pasted HTML, using whichever table has the most cells. */
+/**
+ * One HTML table to a grid, honouring colspan and rowspan. Without this a
+ * merged cell - ordinary in supplier tables and in anything pasted out of Word
+ * - shifts every cell after it one column across, and the item code and the
+ * price stop lining up with the headers they were found under.
+ */
+function gridFromTable(table) {
+  const grid = [];
+  const rowAt = (index) => grid[index] ?? (grid[index] = []);
+
+  Array.from(table.rows).forEach((row, rowIndex) => {
+    const cells = rowAt(rowIndex);
+    let column = 0;
+
+    for (const cell of Array.from(row.cells)) {
+      // Skip over the columns a cell from an earlier row is still occupying.
+      while (cells[column] !== undefined) column += 1;
+
+      const across = Math.max(1, Math.min(cell.colSpan || 1, 64));
+      const down = Math.max(1, Math.min(cell.rowSpan || 1, 512));
+      const text = cell.textContent ?? '';
+
+      for (let i = 0; i < across; i += 1) {
+        // Only the leading column of a wide cell carries the text, but a cell
+        // merged downwards repeats: a price merged across variant rows really
+        // does belong to every one of them.
+        cells[column + i] = i === 0 ? text : '';
+        for (let j = 1; j < down; j += 1) rowAt(rowIndex + j)[column + i] = i === 0 ? text : '';
+      }
+
+      column += across;
+    }
+  });
+
+  return Array.from(grid, (row) => Array.from(row ?? [], (cell) => cell ?? ''));
+}
+
+// Enough of the worker's vocabulary to tell a header row from a data row. This
+// only decides which pasted table to hand over; the real scoring, and the
+// choice of columns, stays in the worker.
+const ITEM_HINT = /קוד|פריט|ברקוד|מק/;
+const PRICE_HINT = /מחיר|חדש|צרכן|מעודכן|עדכון/;
+
+const hasHeaderRow = (grid) => grid.some((row) =>
+  row.some((cell) => ITEM_HINT.test(cell)) && row.some((cell) => PRICE_HINT.test(cell)));
+
+/**
+ * Pull a grid out of pasted HTML: the table with the most cells, unless that
+ * one turns out to be a fragment of a table split across several.
+ */
 function gridFromHtml(html) {
   if (!html || !/<table[\s>]/i.test(html)) return null;
 
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  const tables = Array.from(doc.querySelectorAll('table'));
-  if (!tables.length) return null;
+  const grids = Array.from(doc.querySelectorAll('table'))
+    .map((table) => normalizeGrid(gridFromTable(table)))
+    .filter((grid) => grid.length);
+  if (!grids.length) return null;
 
-  const table = tables.sort((a, b) =>
-    b.querySelectorAll('th, td').length - a.querySelectorAll('th, td').length)[0];
+  const cellCount = (grid) => grid.length * grid[0].length;
+  const best = grids.reduce((a, b) => (cellCount(b) > cellCount(a) ? b : a));
+  if (best.length >= 2 && hasHeaderRow(best)) return best;
 
-  const grid = Array.from(table.rows).map((row) =>
-    Array.from(row.cells).map((cell) => cell.textContent ?? ''));
-
-  return normalizeGrid(grid);
+  // Some pages give the header row a table of its own, or split a long list
+  // over several tables. The biggest single one is then a header with no rows
+  // under it, or rows with no header over them - either way the worker is left
+  // with nothing it can export. Stitching the tables of equal width back
+  // together in document order recovers both, and changes nothing at all for
+  // the ordinary single-table paste.
+  const stitched = grids.filter((grid) => grid[0].length === best[0].length).flat();
+  return stitched.length > best.length && hasHeaderRow(stitched) ? stitched : best;
 }
 
 /** Tab-separated clipboard text, as Excel and Sheets produce it. */
@@ -62,10 +129,23 @@ function gridFromText(text) {
 const MODE_KEY = 'asset-manager-price-mode-v1';
 const isMode = (v) => v === 'file' || v === 'paste';
 
+// How many pasted rows the box shows. The grid behind it is kept whole; this
+// only bounds what a very long paste does to the textarea.
+const PREVIEW_ROWS = 200;
+
 export function createPrice(carried = null) {
   let mode = loadStored(MODE_KEY, isMode, 'file');
   let busy = false;
   let pastedGrid = carried?.grid ?? null;
+
+  // What the box was last filled with from a grid, and how many rows that
+  // grid had beyond it. While the text is untouched the grid is still the
+  // truth; once it is edited the text becomes the truth instead, and the rows
+  // that were never shown are gone - which the notice under the box says out
+  // loud rather than quietly exporting a shorter list.
+  let previewText = carried?.grid && carried?.text ? carried.text : '';
+  let hiddenRows = pastedGrid ? Math.max(0, pastedGrid.length - PREVIEW_ROWS) : 0;
+  let droppedRows = 0;
 
   const status = createStatus();
   const log = createLog();
@@ -154,7 +234,7 @@ export function createPrice(carried = null) {
     setBusy(true);
     log.clear();
     status.set({ phase: 'processing', title: t('Reading pasted table'), summary: '', progress: 10 });
-    log.add(`${plural(pastedGrid.length, 'row', 'rows')} ${t('pasted.')}`);
+    log.add(`${plural(pastedGrid.length, 'row', 'rows')} × ${plural(pastedGrid[0].length, 'column', 'columns')} ${t('pasted.')}`);
 
     try {
       const result = await runSheetJob(
@@ -194,22 +274,42 @@ export function createPrice(carried = null) {
       if (grid && grid.length) {
         event.preventDefault();
         pastedGrid = grid;
-        pasteArea.value = grid.slice(0, 40).map((row) => row.join('\t')).join('\n');
+        hiddenRows = Math.max(0, grid.length - PREVIEW_ROWS);
+        droppedRows = 0;
+        previewText = grid.slice(0, PREVIEW_ROWS).map((row) => row.join('\t')).join('\n');
+        pasteArea.value = previewText;
         syncPasteInfo();
       }
     },
     onInput: () => {
+      // Untouched text means the grid it came from still stands. Re-reading the
+      // box here would throw away every row past the preview, and would also
+      // lose what only the HTML paste knew: which cells were merged.
+      if (previewText && pasteArea.value === previewText) { syncPasteInfo(); return; }
+
       const grid = gridFromText(pasteArea.value);
       pastedGrid = grid && grid.length ? grid : null;
+      droppedRows = hiddenRows;
+      hiddenRows = 0;
+      previewText = '';
       syncPasteInfo();
     },
   });
 
   function syncPasteInfo() {
-    pasteInfo.textContent = pastedGrid
-      ? `${plural(pastedGrid.length, 'row', 'rows')} × ${plural(pastedGrid[0].length, 'column', 'columns')} ${t('ready.')}`
-      : t('Nothing pasted yet.');
-    generateButton.disabled = !pastedGrid;
+    if (!pastedGrid) {
+      pasteInfo.textContent = t('Nothing pasted yet.');
+      generateButton.disabled = true;
+      return;
+    }
+
+    const size = `${plural(pastedGrid.length, 'row', 'rows')} × ${plural(pastedGrid[0].length, 'column', 'columns')} ${t('ready.')}`;
+    let note = '';
+    if (hiddenRows > 0) note = t('Only the first rows are shown. All of them will be used, unless you edit the box.');
+    if (droppedRows > 0) note = tf('Editing the box replaced the pasted table, so {count} rows that were not shown are no longer part of it. Paste again to get them back.', { count: droppedRows });
+
+    pasteInfo.textContent = note ? `${size} ${note}` : size;
+    generateButton.disabled = busy;
   }
 
   const generateButton = h('button', {
