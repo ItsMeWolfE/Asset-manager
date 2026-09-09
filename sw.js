@@ -4,7 +4,7 @@
 // core/version.js. Changing it is what makes the browser install a new worker,
 // which is what surfaces the update prompt in the page.
 
-const CACHE_VERSION = '3.3.1';
+const CACHE_VERSION = '3.3.2';
 
 // Stamped by the Pages workflow with the same build id as core/version.js. It
 // is here purely so the worker's bytes change whenever the shipped files do:

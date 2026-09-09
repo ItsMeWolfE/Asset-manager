@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.3.2 - 2026-09-09
+
+**Prices export as bare numbers**
+
+A price copied out of Excel carried its currency sign into the output - '₪ 79' instead of 79. The shekel sign, spaces and thousands separators are now stripped, leaving the number on its own, still written as text.
+
 ## 3.3.1 - 2026-09-09
 
 **Price header and pasted-table fixes**
