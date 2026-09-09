@@ -1,8 +1,8 @@
 {
-  "version": "3.3.0",
+  "version": "3.3.1",
   "build": "dev",
   "built": "dev",
-  "released": "2026-09-06",
-  "title": "Complete Hebrew translation",
-  "notes": "The interface is now fully translated: over half of it was still appearing in English when Hebrew was selected, including the whole release history. Each language now lives in its own file, so adding another one is a single file plus a single line."
+  "released": "2026-09-09",
+  "title": "Price header and pasted-table fixes",
+  "notes": "The Price XLSX Fixer now accepts a price column whose heading simply names מחיר, such as 'עדוכן מחיר 10.9.26', instead of failing to find one. Pasted tables also keep their columns lined up: merged cells are no longer flattened, a header row sitting in its own table is found, cells holding more than one line no longer break the row apart, and editing a long paste no longer silently drops the rows below the preview."
 }

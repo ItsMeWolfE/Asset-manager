@@ -2,7 +2,7 @@
 //
 // release.sh keeps this value, version.json and the sw.js cache name in step.
 // Nothing else in the app should hardcode a version number.
-export const APP_VERSION = '3.3.0';
+export const APP_VERSION = '3.3.1';
 
 // Which deploy this copy came from, stamped by .github/workflows/pages.yml
 // with a hash of the files that actually ship. Two copies reporting the same

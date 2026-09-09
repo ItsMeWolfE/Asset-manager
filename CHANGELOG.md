@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.3.1 - 2026-09-09
+
+**Price header and pasted-table fixes**
+
+The Price XLSX Fixer now accepts a price column whose heading simply names מחיר, such as 'עדוכן מחיר 10.9.26', instead of failing to find one. Pasted tables also keep their columns lined up: merged cells are no longer flattened, a header row sitting in its own table is found, cells holding more than one line no longer break the row apart, and editing a long paste no longer silently drops the rows below the preview.
+
 ## 3.3.0 - 2026-09-06
 
 **Complete Hebrew translation**
