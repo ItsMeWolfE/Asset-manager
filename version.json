@@ -1,8 +1,8 @@
 {
-  "version": "3.3.2",
+  "version": "3.4.0",
   "build": "dev",
   "built": "dev",
-  "released": "2026-09-09",
-  "title": "Prices export as bare numbers",
-  "notes": "A price copied out of Excel carried its currency sign into the output - '₪ 79' instead of 79. The shekel sign, spaces and thousands separators are now stripped, leaving the number on its own, still written as text."
+  "released": "2026-09-15",
+  "title": "Stock values in the XLSX Fixer",
+  "notes": "The Price XLSX Fixer is now the XLSX Fixer, and writes stock as well as prices. It can read a stock column - 'יש במלאי' and '3 יחידות' become 10, 'אין במלאי' and 'אזל במלאי' become 9 - or mark every item code in the file in stock or out of stock in one go. Uploading, dragging and pasting all work exactly as before."
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.0 - 2026-09-15
+
+**Stock values in the XLSX Fixer**
+
+The Price XLSX Fixer is now the XLSX Fixer, and writes stock as well as prices. It can read a stock column - 'יש במלאי' and '3 יחידות' become 10, 'אין במלאי' and 'אזל במלאי' become 9 - or mark every item code in the file in stock or out of stock in one go. Uploading, dragging and pasting all work exactly as before.
+
 ## 3.3.2 - 2026-09-09
 
 **Prices export as bare numbers**
