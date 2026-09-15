@@ -1,17 +1,20 @@
 // Spreadsheet worker client.
 //
 // The worker bundles SheetJS 0.18.5 together with the Dragon and Price column
-// logic, carried over from 2.4.1 byte for byte. It is started from a Blob (a
-// classic worker, not a module) because that is what fixed local file:// use in
-// Chromium back in 2.0.2, and that constraint has not changed.
+// logic, carried over from 2.4.1 byte for byte, and the stock processor that
+// was added on top of it. It is started from a Blob (a classic worker, not a
+// module) because that is what fixed local file:// use in Chromium back in
+// 2.0.2, and that constraint has not changed.
 
 import { SHEET_WORKER_SRC } from '../vendor/sheet-worker-source.js';
+import { STOCK_WORKER_SRC } from '../vendor/stock-processor-source.js';
 
 let blobUrl = null;
 
 function workerUrl() {
   if (blobUrl) return blobUrl;
-  const blob = new Blob([SHEET_WORKER_SRC], { type: 'text/javascript;charset=utf-8' });
+  // Order matters: the stock half wraps the message handler the bundle installs.
+  const blob = new Blob([SHEET_WORKER_SRC, STOCK_WORKER_SRC], { type: 'text/javascript;charset=utf-8' });
   blobUrl = URL.createObjectURL(blob);
   return blobUrl;
 }

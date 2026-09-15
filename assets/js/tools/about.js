@@ -16,6 +16,7 @@ const ICON_MAP = {
   FileText: 'fileText',
   Table: 'table',
   BadgeDollar: 'badgeDollar',
+  Archive: 'archive',
   Settings: 'settings',
   Refresh: 'refresh',
 };

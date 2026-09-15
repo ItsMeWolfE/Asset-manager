@@ -19,7 +19,7 @@ closing the tab throws all of it away.
 | **Smart Resizer** | Places one image, exactly where you want it, inside a fixed canvas size. |
 | **HTML Cleaner** | Turns a supplier's messy description HTML into something safe to paste into the site. |
 | **Dragon Fixer** | Turns a Dragon stock export into the two-column file the import expects. |
-| **Price XLSX Fixer** | Pulls item codes and updated prices out of any supplier price list. |
+| **XLSX Fixer** | Pulls item codes out of any supplier list, with either the updated price or the stock value beside them. |
 
 The **About** tab inside the app documents every tool in full — what it is for,
 how to use it step by step, and what to watch out for — in English and Hebrew.
@@ -188,7 +188,8 @@ assets/js/
   data/                     About copy and the changelog
   workers/crop-worker-source.js  image bounds analysis
   workers/segment-worker.js      U^2-Net inference
-  vendor/                   SheetJS + spreadsheet processors
+  vendor/sheet-worker-source.js   SheetJS + Dragon/Price processors
+  vendor/stock-processor-source.js  stock column and 9/10 values
 
 assets/models/u2netp.onnx   the background-removal network (4.4 MB)
 assets/vendor/onnxruntime/  ONNX Runtime Web, WebAssembly build (11 MB)
@@ -303,7 +304,8 @@ one, and nothing here should stop working because a third party did.
 
 - **SheetJS 0.18.5** — parsing XLSX is not worth reimplementing. Carried over
   verbatim inside the spreadsheet worker, along with the Dragon and Price column
-  logic.
+  logic. The stock half of the XLSX Fixer is appended to it as a second source
+  file rather than mixed into it.
 - **ONNX Runtime Web 1.19.2 + U²-Net** — background removal, fetched only when
   somebody turns that option on.
 
@@ -321,3 +323,15 @@ The Dragon and Price column matching lives inside
 worker source. It is deliberately untouched from 2.4.1 so the matching rules stay
 known-good. Edit it only if the header names genuinely change, and keep it as one
 classic (non-module) worker — that is what makes it work in Chromium.
+
+The one change made to it since is the `self.__sheet` hook at the tail of that
+literal, which hands the bundle's workbook helpers — read, write, normalize,
+item-code scoring, the two-column text sheet — to
+`assets/js/vendor/stock-processor-source.js`. `core/sheet.js` concatenates the
+two sources into one Blob, in that order, and the stock half wraps the message
+handler the bundle installed: anything that is not a `stock` job is passed
+straight through to it.
+
+**New spreadsheet logic goes in the stock file, in readable source**, or in a
+third one beside it. Nothing new belongs in the minified bundle; if it needs
+something the hook does not expose yet, add it to the hook.

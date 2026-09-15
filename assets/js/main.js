@@ -18,7 +18,7 @@ const TOOLS = [
   { id: 'resizer', label: 'Smart Resizer', description: 'Place an image precisely inside a fixed output canvas.', icon: 'resize', create: createResizer },
   { id: 'transformer', label: 'HTML Cleaner', description: 'Clean and normalize product-description HTML safely.', icon: 'fileText', create: createCleaner },
   { id: 'dragon', label: 'Dragon Fixer', description: 'Normalize Dragon inventory spreadsheets for import.', icon: 'table', create: createDragon },
-  { id: 'price', label: 'Price XLSX Fixer', description: 'Extract item codes and updated consumer prices into text-safe XLSX output.', icon: 'badgeDollar', create: createPrice },
+  { id: 'price', label: 'XLSX Fixer', description: 'Extract item codes with updated prices or stock values into text-safe XLSX output.', icon: 'archive', create: createPrice },
   { id: 'about', label: 'About', description: 'How each tool works, from start to finish.', icon: 'info', create: createAbout },
 ];
 

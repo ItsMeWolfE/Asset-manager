@@ -1,8 +1,10 @@
-// Price XLSX Fixer - pulls item codes and updated prices out of a supplier list.
+// XLSX Fixer - pulls item codes out of a supplier list, together with either
+// the updated price or the 9/10 stock value the import expects.
 //
 // The header scoring, column choice and text-safe output all live in the
-// spreadsheet worker, unchanged from 2.4.1. This file handles input (a workbook
-// or a pasted table) and reports what the worker decided.
+// spreadsheet worker: the price half unchanged from 2.4.1, the stock half
+// beside it in vendor/stock-processor-source.js. This file handles input (a
+// workbook or a pasted table) and reports what the worker decided.
 
 import { h, icon } from '../core/dom.js';
 import { t, tf, plural } from '../core/i18n.js';
@@ -88,9 +90,11 @@ function gridFromTable(table) {
 // choice of columns, stays in the worker.
 const ITEM_HINT = /קוד|פריט|ברקוד|מק/;
 const PRICE_HINT = /מחיר|חדש|צרכן|מעודכן|עדכון/;
+const STOCK_HINT = /מלאי|זמינ|כמות|stock|availab/i;
 
 const hasHeaderRow = (grid) => grid.some((row) =>
-  row.some((cell) => ITEM_HINT.test(cell)) && row.some((cell) => PRICE_HINT.test(cell)));
+  row.some((cell) => ITEM_HINT.test(cell))
+  && row.some((cell) => PRICE_HINT.test(cell) || STOCK_HINT.test(cell)));
 
 /**
  * Pull a grid out of pasted HTML: the table with the most cells, unless that
@@ -135,6 +139,15 @@ const PREVIEW_ROWS = 200;
 
 export function createPrice(carried = null) {
   let mode = loadStored(MODE_KEY, isMode, 'file');
+
+  // What the file is being read for. Carried across a tool switch or a language
+  // change, like the pasted table is, but deliberately not remembered between
+  // visits: which of the two columns a run writes, and which value it writes,
+  // are too easy to leave set from last week and never look at.
+  let category = carried?.category === 'stock' ? 'stock' : 'price';
+  let stockSource = carried?.stockSource === 'all' ? 'all' : 'detect';
+  let stockValue = carried?.stockValue === '9' ? '9' : '10';
+
   let busy = false;
   let pastedGrid = carried?.grid ?? null;
 
@@ -149,37 +162,102 @@ export function createPrice(carried = null) {
 
   const status = createStatus();
   const log = createLog();
-  const modeButtons = new Map();
+
+  // Every toggle on the page, so a run can disable the lot of them.
+  const controls = [];
 
   function setBusy(value) {
     busy = value;
-    for (const button of modeButtons.values()) button.disabled = value;
+    for (const button of controls) button.disabled = value;
     dropzone.setBusy(value);
     generateButton.disabled = value || !pastedGrid;
     pasteArea.disabled = value;
   }
 
+  /**
+   * One segmented control. `read` is called rather than captured because the
+   * value it reflects lives in a variable these buttons themselves reassign.
+   */
+  function segmented(label, read, write, entries) {
+    const buttons = new Map();
+
+    const group = h('div', { class: 'segmented', role: 'group', 'aria-label': label });
+
+    for (const [value, text, iconName] of entries) {
+      const button = h('button', {
+        type: 'button',
+        'aria-pressed': String(read() === value),
+        onClick: () => {
+          write(value);
+          for (const [key, entry] of buttons) entry.setAttribute('aria-pressed', String(key === value));
+        },
+      }, iconName ? icon(iconName, 14) : null, t(text));
+
+      buttons.set(value, button);
+      controls.push(button);
+      group.append(button);
+    }
+
+    return group;
+  }
+
+  // -------------------------------------------------------------------------
+  // Running a job
+  // -------------------------------------------------------------------------
+
+  /** The worker message for the current category, given one input source. */
+  const jobFor = (source) => (category === 'price'
+    ? { tool: 'price', ...source }
+    : { tool: 'stock', mode: stockSource, value: stockValue, ...source });
+
   function reportResult(result, fallbackName) {
     log.add(`${t('Worksheet')}: ${result.sheetName} — ${t('header row')} ${result.headerRow}`);
     log.add(`${t('Item column')}: ${result.itemHeader}`);
-    log.add(`${t('Price column')}: ${result.priceHeader}`);
 
-    // The verb has to agree with the count, so the whole clause is pluralised.
-    if (result.alternativePrices > 0) {
-      log.add(plural(result.alternativePrices,
-        'other price column was passed over.',
-        'other price columns were passed over.'));
+    if (category === 'price') {
+      log.add(`${t('Price column')}: ${result.priceHeader}`);
+
+      // The verb has to agree with the count, so the whole clause is pluralised.
+      if (result.alternativePrices > 0) {
+        log.add(plural(result.alternativePrices,
+          'other price column was passed over.',
+          'other price columns were passed over.'));
+      }
+    } else if (result.stockHeader) {
+      log.add(`${t('Stock column')}: ${result.stockHeader}`);
+
+      if (result.alternativeStock > 0) {
+        log.add(plural(result.alternativeStock,
+          'other stock column was passed over.',
+          'other stock columns were passed over.'));
+      }
+    } else {
+      log.add(`${t('Stock value')}: ${t(result.value === '9' ? 'Out of stock (9)' : 'In stock (10)')}`);
     }
+
     if (result.skippedBlank > 0) {
       log.add(plural(result.skippedBlank,
         'row had only one of the two values and was skipped.',
         'rows had only one of the two values and were skipped.'));
     }
+
+    // A wording nobody has taught it is reported rather than guessed at, with
+    // the actual text, so it can be added.
+    if (result.skippedUnknown > 0) {
+      log.add(plural(result.skippedUnknown,
+        'row had a stock value that could not be read and was skipped.',
+        'rows had stock values that could not be read and were skipped.'));
+      if (result.unknownSamples?.length) {
+        log.add(`${t('For example')}: ${result.unknownSamples.join(' · ')}`);
+      }
+    }
+
     if (result.unsafeNumericItems > 0) {
       log.error(t('Some item codes were stored as unsafe large numbers. Excel had already rounded them in the source file; ask the supplier to send codes as text.'));
     }
 
-    const name = result.filename || `${fallbackName}_price_fixed.xlsx`;
+    const suffix = category === 'price' ? '_price_fixed.xlsx' : '_stock_fixed.xlsx';
+    const name = result.filename || `${fallbackName}${suffix}`;
     saveBlob(new Blob([result.buffer], { type: XLSX_MIME }), name);
 
     status.set({
@@ -216,7 +294,7 @@ export function createPrice(carried = null) {
     try {
       const buffer = await file.arrayBuffer();
       const result = await runSheetJob(
-        { tool: 'price', kind: 'file', buffer, baseName },
+        jobFor({ kind: 'file', buffer, baseName }),
         [buffer],
         (progress, text) => status.set({ progress, title: text || undefined }),
       );
@@ -238,7 +316,7 @@ export function createPrice(carried = null) {
 
     try {
       const result = await runSheetJob(
-        { tool: 'price', kind: 'paste', grid: pastedGrid, baseName: 'pasted' },
+        jobFor({ kind: 'paste', grid: pastedGrid, baseName: 'pasted' }),
         [],
         (progress, text) => status.set({ progress, title: text || undefined }),
       );
@@ -250,10 +328,14 @@ export function createPrice(carried = null) {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Input
+  // -------------------------------------------------------------------------
+
   const dropzone = createDropzone({
-    iconName: 'badgeDollar',
-    title: t('Choose or drop a supplier price list'),
-    hint: t('Accepts XLSX, XLS and CSV. Every worksheet is scanned and the best item-code and updated-price columns are chosen.'),
+    iconName: 'archive',
+    title: t('Choose or drop a supplier spreadsheet'),
+    hint: t('Accepts XLSX, XLS and CSV. Every worksheet is scanned and the best item-code column is chosen, together with the price or stock column beside it.'),
     buttonLabel: t('Upload file'),
     accept: '.xlsx,.xls,.csv',
     multiple: false,
@@ -326,31 +408,67 @@ export function createPrice(carried = null) {
     mode = value;
     filePanel.hidden = value !== 'file';
     pastePanel.hidden = value !== 'paste';
-    for (const [key, button] of modeButtons) button.setAttribute('aria-pressed', String(mode === key));
   }
 
-  function modeButton(value, label, iconName) {
-    const button = h('button', {
-      type: 'button',
-      'aria-pressed': String(mode === value),
-      onClick: () => { setMode(value); saveStored(MODE_KEY, value); },
-    }, icon(iconName, 14), t(label));
-    modeButtons.set(value, button);
-    return button;
+  const modeSwitch = segmented(t('Input mode'), () => mode, (value) => {
+    setMode(value);
+    saveStored(MODE_KEY, value);
+  }, [['file', 'Upload file', 'upload'], ['paste', 'Paste table', 'clipboard']]);
+
+  // -------------------------------------------------------------------------
+  // What to extract
+  // -------------------------------------------------------------------------
+
+  const DETECT_HINT = 'The stock column is found the way the price column is. Wordings like "יש במלאי" and "3 יחידות" become 10, and "אין במלאי" or "אזל במלאי" become 9; anything it cannot read is skipped and counted in the log.';
+  const MARK_HINT = 'No stock column is read. Every item code in the file is written out against the one value you choose here.';
+
+  const stockHint = h('p', { class: 'panel__hint' }, t(DETECT_HINT));
+
+  const valueRow = h('div', { class: 'row' },
+    h('span', { class: 'field__label' }, t('Value to write')),
+    segmented(t('Value to write'), () => stockValue, (value) => { stockValue = value; },
+      [['10', 'In stock (10)', 'check'], ['9', 'Out of stock (9)', 'x']]));
+
+  function setStockSource(value) {
+    stockSource = value;
+    valueRow.hidden = value !== 'all';
+    stockHint.textContent = t(value === 'all' ? MARK_HINT : DETECT_HINT);
   }
+
+  const stockPanel = h('div', { class: 'stack' },
+    h('div', { class: 'row' },
+      h('span', { class: 'field__label' }, t('Stock source')),
+      segmented(t('Stock source'), () => stockSource, setStockSource,
+        [['detect', 'Read the stock column', 'table'], ['all', 'Mark every row', 'wand']])),
+    valueRow,
+    stockHint);
+
+  function setCategory(value) {
+    category = value;
+    stockPanel.hidden = value !== 'stock';
+  }
+
+  const categorySwitch = segmented(t('Output'), () => category, setCategory,
+    [['price', 'Prices', 'badgeDollar'], ['stock', 'Stock', 'archive']]);
 
   const root = h('div', { class: 'stack' },
-    pageHead('badgeDollar', t('Price XLSX Fixer'),
-      t('Extract item codes and updated consumer prices into text-safe XLSX output.')),
+    pageHead('archive', t('XLSX Fixer'),
+      t('Extract item codes with updated prices or stock values into text-safe XLSX output.')),
+
+    h('section', { class: 'panel' },
+      h('div', { class: 'panel__head' },
+        h('div', null,
+          h('h2', { class: 'panel__title' }, t('Output')),
+          h('p', { class: 'panel__hint' }, t('Prices, or the 9 and 10 stock values the import expects.'))),
+        categorySwitch),
+      stockPanel),
 
     h('section', { class: 'panel' },
       h('div', { class: 'panel__head' },
         h('div', null,
           h('h2', { class: 'panel__title' }, t('Input')),
-          h('p', { class: 'panel__hint' }, t('Check the log: it names the worksheet and the two columns it chose.'))),
-        h('div', { class: 'segmented', role: 'group', 'aria-label': t('Input mode') },
-          modeButton('file', 'Upload file', 'upload'),
-          modeButton('paste', 'Paste table', 'clipboard'))),
+          h('p', { class: 'panel__hint' }, t('Check the log: it names the worksheet and the columns it chose.'))),
+        modeSwitch),
       filePanel,
       pastePanel),
 
@@ -358,16 +476,24 @@ export function createPrice(carried = null) {
     log.el,
   );
 
+  setCategory(category);
+  setStockSource(stockSource);
   setMode(mode);
   if (carried?.text) pasteArea.value = carried.text;
   syncPasteInfo();
 
   return {
     el: root,
-    getState() { return { grid: pastedGrid, text: pasteArea.value }; },
+    getState() {
+      return { grid: pastedGrid, text: pasteArea.value, category, stockSource, stockValue };
+    },
     // A grid of strings and the text behind it are both JSON, so they survive
-    // the reload that applying an update performs.
-    getPortableState() { return { grid: pastedGrid, text: pasteArea.value }; },
+    // the reload that applying an update performs. What the run was set to
+    // write goes with them, so an update applied mid-job does not quietly
+    // change the answer.
+    getPortableState() {
+      return { grid: pastedGrid, text: pasteArea.value, category, stockSource, stockValue };
+    },
     destroy() {},
   };
 }
