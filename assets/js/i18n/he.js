@@ -14,6 +14,7 @@ export const he = {
   name: 'עברית',
   dir: 'rtl',
   strings: {
+    "A list of barcodes beside a column of wordings, with no headings at all, failed in both stock modes. When nothing in the table scores as a heading, the columns are now chosen by what is in them instead: the one that reads as item codes, and the one whose wordings map to stock. Headings still win wherever they exist.": "רשימה של ברקודים לצד עמודת ניסוחים, בלי כותרות כלל, נכשלה בשני מצבי המלאי. כששום דבר בטבלה אינו מנוקד ככותרת, העמודות נבחרות עכשיו לפי התוכן שלהן: זו שנקראת כקודי פריט, וזו שהניסוחים שלה מתורגמים למלאי. כותרות עדיין גוברות בכל מקום שבו הן קיימות.",
     "A new About tab explains what every tool is for, how to use it step by step, and what to watch out for, written for someone opening the page for the first time. Available in both languages.": "לשונית אודות חדשה מסבירה למה משמש כל כלי, כיצד להשתמש בו שלב אחר שלב, ועל מה כדאי לשים לב, בניסוח למי שפותח את העמוד לראשונה. זמינה בשתי השפות.",
     "A new version has been downloaded and is ready.": "גרסה חדשה הורדה ומוכנה.",
     "A newer version has already been downloaded.": "גרסה חדשה יותר כבר הורדה.",
@@ -189,6 +190,7 @@ export const he = {
     "Stock": "מלאי",
     "Stock column": "עמודת מלאי",
     "Stock filter": "סינון מלאי",
+    "Stock lists with no headings": "רשימות מלאי בלי כותרות",
     "Stock source": "מקור המלאי",
     "Stock value": "ערך מלאי",
     "Stock values in the XLSX Fixer": "ערכי מלאי במתקן XLSX",
