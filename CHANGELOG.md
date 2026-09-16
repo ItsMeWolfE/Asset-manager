@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.1 - 2026-09-16
+
+**Stock lists with no headings**
+
+A list of barcodes beside a column of wordings, with no headings at all, failed in both stock modes. When nothing in the table scores as a heading, the columns are now chosen by what is in them instead: the one that reads as item codes, and the one whose wordings map to stock. Headings still win wherever they exist.
+
 ## 3.4.0 - 2026-09-15
 
 **Stock values in the XLSX Fixer**
