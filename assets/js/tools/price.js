@@ -211,7 +211,15 @@ export function createPrice(carried = null) {
     : { tool: 'stock', mode: stockSource, value: stockValue, ...source });
 
   function reportResult(result, fallbackName) {
-    log.add(`${t('Worksheet')}: ${result.sheetName} — ${t('header row')} ${result.headerRow}`);
+    // A headerless list has no heading to name, and the columns are reported by
+    // their letter instead - so the log still says which two were read.
+    if (result.headerless) {
+      log.add(`${t('Worksheet')}: ${result.sheetName} — ${t('no header row')}`);
+      log.add(t('The columns were chosen by what is in them, not by their headings.'));
+    } else {
+      log.add(`${t('Worksheet')}: ${result.sheetName} — ${t('header row')} ${result.headerRow}`);
+    }
+
     log.add(`${t('Item column')}: ${result.itemHeader}`);
 
     if (category === 'price') {

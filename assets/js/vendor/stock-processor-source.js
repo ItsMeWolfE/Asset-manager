@@ -145,17 +145,114 @@ export const STOCK_WORKER_SRC = String.raw`
     return best;
   }
 
+  /**
+   * Does this read as an item code rather than as a name or a wording? The
+   * rule is the Dragon fixer's, which has judged barcodes this way since
+   * 2.4.1: it has to carry a digit and no Hebrew.
+   */
+  function looksLikeCode(text) {
+    if (!text || text.length < 3) return false;
+    if (/[֐-׿؀-ۿ]/.test(text)) return false;
+    return /\d/.test(text);
+  }
+
+  // How much of a column has to read as codes, or as stock wordings, before it
+  // is taken for that column. Below this the table is left alone rather than
+  // guessed at.
+  var CONFIDENT = 0.6;
+
+  /**
+   * Columns for a table with no headings at all - a list of barcodes and a
+   * column of wordings, pasted straight out of somewhere. Nothing scores as a
+   * header in that case, so each column is judged by what is in it: the one
+   * that reads as item codes, and the one whose wordings map to stock.
+   */
+  function findColumnsByContent(workbook, wantStock) {
+    var best = null;
+
+    workbook.SheetNames.forEach(function (name, sheetIndex) {
+      var sheet = workbook.Sheets[name];
+      if (!sheet || !sheet["!ref"]) return;
+
+      var range = utils.decode_range(sheet["!ref"]);
+      var lastRow = Math.min(range.e.r, range.s.r + HEADER_SCAN_ROWS - 1);
+      var columns = [];
+
+      for (var column = range.s.c; column <= range.e.c; column += 1) {
+        var filled = 0;
+        var codes = 0;
+        var stocks = 0;
+        var width = 0;
+
+        for (var row = range.s.r; row <= lastRow; row += 1) {
+          var text = cellText(sheet[utils.encode_cell({ r: row, c: column })], "scan").trim();
+          if (!text) continue;
+          filled += 1;
+          width += text.length;
+          if (looksLikeCode(text)) codes += 1;
+          if (stockValue(text)) stocks += 1;
+        }
+
+        if (filled) {
+          columns.push({
+            colIndex: column, filled: filled,
+            code: codes / filled, stock: stocks / filled, width: width / filled,
+          });
+        }
+      }
+
+      var item = null;
+      columns.forEach(function (column) {
+        if (column.code < CONFIDENT) return;
+        // Two columns of digits - a code and a price, say - are told apart by
+        // length: a barcode is the longer of the two.
+        if (!item || column.code > item.code || (column.code === item.code && column.width > item.width)) item = column;
+      });
+      if (!item) return;
+
+      var stock = null;
+      if (wantStock) {
+        columns.forEach(function (column) {
+          if (column.colIndex === item.colIndex || column.stock < CONFIDENT) return;
+          // A column of plain numbers reads as a count, so a price column
+          // qualifies as readily as a quantity does. Where both are on offer,
+          // the one written in words is the one that meant stock.
+          if (!stock || column.stock > stock.stock
+            || (column.stock === stock.stock && column.code < stock.code)) stock = column;
+        });
+        if (!stock) return;
+      }
+
+      var usable = Math.min(item.filled, stock ? stock.filled : item.filled);
+      if (best && usable <= best.usable) return;
+
+      best = {
+        sheetName: name, sheetIndex: sheetIndex, worksheet: sheet, range: range,
+        // One before the first row of data, so the caller's loop starts on it.
+        headerRow: range.s.r - 1,
+        headerless: true,
+        usable: usable,
+        item: { colIndex: item.colIndex, original: utils.encode_col(item.colIndex), normalized: null },
+        stock: stock ? { colIndex: stock.colIndex, original: utils.encode_col(stock.colIndex), normalized: null } : null,
+        stockCandidates: [],
+      };
+    });
+
+    return best;
+  }
+
   // How many distinct unreadable stock values are carried back for the log.
   var UNKNOWN_SAMPLES = 3;
 
   function processStock(workbook, baseName, options) {
     var detect = options.mode === "detect";
-    var found = findColumns(workbook, detect ? scoreStockHeader : null);
+    var found = findColumns(workbook, detect ? scoreStockHeader : null)
+      || findColumnsByContent(workbook, detect);
 
     if (!found) {
       throw new Error(detect
-        ? "Could not find a product item-code column together with a stock column. Fields containing 'ספק' or 'יצרן' are ignored."
-        : "Could not find a product item-code column. Fields containing 'ספק' or 'יצרן' are ignored.");
+        ? "Could not find a product item-code column together with a stock column, by heading or by content. Fields containing 'ספק' or 'יצרן' are ignored."
+        : "Could not find a product item-code column, by heading or by content. Fields containing 'ספק' or 'יצרן' are ignored.");
     }
 
     var fixed = options.value === OUT_OF_STOCK ? OUT_OF_STOCK : IN_STOCK;
@@ -173,8 +270,15 @@ export const STOCK_WORKER_SRC = String.raw`
         : "";
 
       // A file that repeats its own headings partway down is not describing a
-      // product on that row.
-      if (normalize(item) === found.item.normalized && (!detect || normalize(stockText) === found.stock.normalized)) continue;
+      // product on that row. With no headings there is nothing to repeat, and
+      // a row is kept only while its code still reads as one - which is what
+      // drops a stray note, or a heading nobody scored, out of the middle of
+      // an otherwise headerless list.
+      if (found.headerless) {
+        if (item && !looksLikeCode(item)) continue;
+      } else if (normalize(item) === found.item.normalized && (!detect || normalize(stockText) === found.stock.normalized)) {
+        continue;
+      }
 
       if (!item) {
         if (detect && stockText) skippedBlank += 1;
@@ -220,6 +324,7 @@ export const STOCK_WORKER_SRC = String.raw`
       mode: detect ? "detect" : "all",
       value: detect ? null : fixed,
       sheetName: found.sheetName,
+      headerless: Boolean(found.headerless),
       headerRow: found.headerRow + 1,
       itemHeader: found.item.original,
       stockHeader: detect ? found.stock.original : null,
