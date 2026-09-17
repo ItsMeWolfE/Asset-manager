@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.5.0 - 2026-09-17
+
+**Blank lines survive the HTML Cleaner**
+
+A description pasted as a bold header, text, an image or video and a blank line between them came out with the blank lines gone and the blocks packed together. A paragraph that was blank in the pasted text now stays a blank paragraph, keeping the spacing you had. Empty paragraphs the flattening itself leaves behind are still dropped, and spans are still removed everywhere.
+
 ## 3.4.1 - 2026-09-16
 
 **Stock lists with no headings**

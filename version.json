@@ -1,8 +1,8 @@
 {
-  "version": "3.4.1",
+  "version": "3.5.0",
   "build": "dev",
   "built": "dev",
-  "released": "2026-09-16",
-  "title": "Stock lists with no headings",
-  "notes": "A list of barcodes beside a column of wordings, with no headings at all, failed in both stock modes. When nothing in the table scores as a heading, the columns are now chosen by what is in them instead: the one that reads as item codes, and the one whose wordings map to stock. Headings still win wherever they exist."
+  "released": "2026-09-17",
+  "title": "Blank lines survive the HTML Cleaner",
+  "notes": "A description pasted as a bold header, text, an image or video and a blank line between them came out with the blank lines gone and the blocks packed together. A paragraph that was blank in the pasted text now stays a blank paragraph, keeping the spacing you had. Empty paragraphs the flattening itself leaves behind are still dropped, and spans are still removed everywhere."
 }
