@@ -157,6 +157,19 @@ export function transformHtml(html) {
     }
 
     if (tag === 'P') {
+      // A paragraph that arrived blank is a deliberate gap in the pasted text,
+      // not a leftover of the flattening, so it survives as a blank paragraph.
+      // It says so by holding a space or a break; one holding nothing at all is
+      // an artifact of the parse - a <div> inside a <p> splits the paragraph in
+      // two - and is dropped as before.
+      const text = node.textContent ?? '';
+      if (!text.trim() && !node.querySelector('img,video,table')) {
+        const br = Boolean(node.querySelector('br'));
+        if (text || br) tokens.push({ k: 'blank', a: carriedAttrs(node), v: text, br });
+        else tokens.push({ k: 'break' });
+        return;
+      }
+
       tokens.push({ k: 'break' }, { k: 'attrs', a: carriedAttrs(node) });
       [...node.childNodes].forEach((child) => walk(child, true));
       tokens.push({ k: 'break' });
@@ -237,6 +250,14 @@ export function transformHtml(html) {
     if (token.k === 'break') {
       closeParagraph();
       pendingAttrs = null;
+    } else if (token.k === 'blank') {
+      closeParagraph();
+      const blank = doc.createElement('p');
+      applyAttrs(blank, token.a);
+      if (token.v) blank.append(doc.createTextNode(token.v));
+      else if (token.br) blank.append(doc.createElement('br'));
+      fragment.append(blank);
+      pendingAttrs = null;
     } else if (token.k === 'attrs') {
       pendingAttrs = token.a;
     } else if (token.k === 'text') {
@@ -279,6 +300,13 @@ export function transformHtml(html) {
 
   const holder = doc.createElement('div');
   holder.append(fragment);
+
+  // The walk unwraps spans as it reaches them; this holds the guarantee for any
+  // that rode into the output inside a subtree that was cloned whole.
+  for (const span of [...holder.querySelectorAll('span')].reverse()) {
+    span.replaceWith(...span.childNodes);
+  }
+
   return holder.innerHTML;
 }
 
