@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.6.0 - 2026-09-17
+
+**Headings stay with their text**
+
+A supplier writes a feature block as one paragraph - a bold heading, a line break, then the text that belongs to it. The cleaner treated every break as a paragraph break, so the heading was torn off into its own paragraph and left floating above a gap, and the double breaks between blocks disappeared. A single break is now a line break inside the paragraph, keeping a heading and its text in one block; two or more end the paragraph and the extra ones stay as the blank lines they drew.
+
 ## 3.5.0 - 2026-09-17
 
 **Blank lines survive the HTML Cleaner**
