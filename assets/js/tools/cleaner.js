@@ -140,7 +140,8 @@ export function transformHtml(html) {
     if (tag === 'VIDEO') { tokens.push({ k: 'media', n: flattenVideo(node), inline }); return; }
     if (tag === 'TABLE') { tokens.push({ k: 'table', n: cleanTable(node) }); return; }
     if (tag === 'SOURCE' || tag === 'TRACK' || DROP.has(tag)) return;
-    if (tag === 'BR' || tag === 'HR') { tokens.push({ k: 'break' }); return; }
+    if (tag === 'BR') { tokens.push({ k: 'br' }); return; }
+    if (tag === 'HR') { tokens.push({ k: 'break' }); return; }
 
     if (tag === 'STRONG' || tag === 'B') {
       tokens.push({ k: 'strongStart', a: carriedAttrs(node) });
@@ -218,7 +219,7 @@ export function transformHtml(html) {
     if (!paragraph) return;
 
     for (const strong of [...paragraph.querySelectorAll('strong')].reverse()) {
-      const hasContent = (strong.textContent ?? '').trim() || strong.querySelector('img, video');
+      const hasContent = (strong.textContent ?? '').trim() || strong.querySelector('img, video, br');
       if (!hasContent) {
         strong.remove();
         continue;
@@ -236,7 +237,7 @@ export function transformHtml(html) {
       paragraph.lastChild.remove();
     }
 
-    if ((paragraph.textContent ?? '').trim() || paragraph.querySelector('img, video')) {
+    if ((paragraph.textContent ?? '').trim() || paragraph.querySelector('img, video, br')) {
       fragment.append(paragraph);
     }
 
@@ -246,7 +247,35 @@ export function transformHtml(html) {
     pendingAttrs = null;
   };
 
-  for (const token of tokens) {
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+
+    if (token.k === 'br') {
+      // One break is a line break inside the paragraph, and stays one: a header
+      // sitting above its own text is written that way, and splitting it into
+      // two paragraphs pulls them apart. Two or more are how a supplier writes
+      // a paragraph break - the first ends the paragraph, the rest stand as the
+      // blank lines they drew. Blank text between breaks belongs to the run.
+      let end = i;
+      let run = 0;
+      while (end < tokens.length &&
+             (tokens[end].k === 'br' || (tokens[end].k === 'text' && !tokens[end].v.trim()))) {
+        if (tokens[end].k === 'br') run += 1;
+        end += 1;
+      }
+      i = end - 1;
+
+      if (run === 1) {
+        openParagraph();
+        cursor.append(doc.createElement('br'));
+      } else {
+        closeParagraph();
+        for (let blank = 1; blank < run; blank += 1) fragment.append(doc.createElement('p'));
+        pendingAttrs = null;
+      }
+      continue;
+    }
+
     if (token.k === 'break') {
       closeParagraph();
       pendingAttrs = null;
