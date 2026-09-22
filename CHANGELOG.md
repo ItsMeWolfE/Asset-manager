@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.6.1 - 2026-09-22
+
+**EOL reads as out of stock**
+
+A stock column that marks a discontinued line EOL was counted as unreadable and skipped. EOL now joins the out-of-stock wordings, so those rows are written out as 9 the way אזל במלאי and לא זמין already were.
+
 ## 3.6.0 - 2026-09-17
 
 **Headings stay with their text**

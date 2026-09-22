@@ -1,8 +1,8 @@
 {
-  "version": "3.6.0",
+  "version": "3.6.1",
   "build": "dev",
   "built": "dev",
-  "released": "2026-09-17",
-  "title": "Headings stay with their text",
-  "notes": "A supplier writes a feature block as one paragraph - a bold heading, a line break, then the text that belongs to it. The cleaner treated every break as a paragraph break, so the heading was torn off into its own paragraph and left floating above a gap, and the double breaks between blocks disappeared. A single break is now a line break inside the paragraph, keeping a heading and its text in one block; two or more end the paragraph and the extra ones stay as the blank lines they drew."
+  "released": "2026-09-22",
+  "title": "EOL reads as out of stock",
+  "notes": "A stock column that marks a discontinued line EOL was counted as unreadable and skipped. EOL now joins the out-of-stock wordings, so those rows are written out as 9 the way אזל במלאי and לא זמין already were."
 }
