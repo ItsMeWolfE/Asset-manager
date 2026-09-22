@@ -56,7 +56,9 @@ export const STOCK_WORKER_SRC = String.raw`
   // contains an in-stock wording inside it - "אין במלאי" holds "במלאי" - and
   // never the other way round. Whole words only, because "מלאי" itself ends in
   // the letters of "לא".
-  var OUT_PHRASES = /(out of stock|sold out|not available|unavailable|back ?order|on order|discontinued)/;
+  // "EOL" is a whole word on its own terms - \b rather than the spaces the
+  // Hebrew wordings need - so a product called "Neolithic" is not read as one.
+  var OUT_PHRASES = /(out of stock|sold out|not available|unavailable|back ?order|on order|discontinued|\beol\b)/;
   var OUT_WORDS = /(^|\s)(אין|אינו|אינה|איננו|חסר|חסרה|חסרים|אזל|אזלה|אזלו|נגמר|נגמרה|נגמרו|ללא|לא|no|not|out|none|false|zero)(\s|$)/;
   var IN_PHRASES = /(in stock|on hand|instock)/;
   var IN_WORDS = /(^|\s)(יש|קיים|קיימת|קיימים|נמצא|נמצאת|נמצאים|במלאי|מלאי|זמין|זמינה|זמינים|במחסן|yes|true|available)(\s|$)/;
