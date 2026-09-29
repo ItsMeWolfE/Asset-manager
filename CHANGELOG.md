@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.0.0 - 2026-09-29
+
+**Six tools became four**
+
+The Image Optimiser and the Smart Resizer are now one tool called Images, with a switch at the top choosing between Optimise and Place. They share the file format, the download packaging, the dropzone and the paste handler, and Place finally writes WebP at quality 92 instead of losslessly, so a placed photo is no longer larger than the JPEG it came from. The XLSX Fixer and the Dragon Fixer are now Spreadsheets, with Dragon as a third option on the Output switch that already read Prices and Stock. Cropping on or off plus the separate full or square choice became one Trim control reading Off, Tight or Square, so there is no longer a switch on screen doing nothing. Nothing was taken away, every setting carries over, and old bookmarks still land on the tool that absorbed them.
+
 ## 3.9.1 - 2026-09-29
 
 **WebP comes out at quality 92**

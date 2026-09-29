@@ -19,13 +19,15 @@ const TOOLS = [
 ];
 
 // Where the six-tool addresses of 3.x land now that there are four. Bookmarks
-// and anything the About page linked to keep working.
+// and anything the About page linked to keep working. A bookmark to the Smart
+// Resizer meant placing rather than optimising, so it says so: the second half
+// is handed to the tool as if it were carried state.
 const LEGACY_IDS = {
-  cropper: 'images',
-  resizer: 'images',
-  transformer: 'cleaner',
-  dragon: 'sheets',
-  price: 'sheets',
+  cropper: ['images', { mode: 'optimise' }],
+  resizer: ['images', { mode: 'place' }],
+  transformer: ['cleaner', null],
+  dragon: ['sheets', null],
+  price: ['sheets', null],
 };
 
 const DEFAULT_TOOL = 'images';
@@ -114,25 +116,29 @@ function restoreCarried() {
   }
 }
 
-function toolIdFromHash() {
+/** The tool a hash names, and whatever that address implies about its state. */
+function routeFromHash() {
   const id = window.location.hash.replace(/^#\/?/, '');
-  if (TOOLS.some((tool) => tool.id === id)) return id;
-  return LEGACY_IDS[id] ?? DEFAULT_TOOL;
+  if (TOOLS.some((tool) => tool.id === id)) return { id, hint: null };
+  const [legacyId, hint] = LEGACY_IDS[id] ?? [DEFAULT_TOOL, null];
+  return { id: legacyId, hint };
 }
 
-function mount(id, { focus = false, force = false } = {}) {
+function mount(id, { focus = false, force = false, hint = null } = {}) {
   const tool = TOOLS.find((entry) => entry.id === id) || TOOLS[0];
 
   // Clicking the tool you are already on does nothing. `force` is for a
-  // language change, which has to rebuild that very tool.
-  if (!force && currentId === tool.id && current) return;
+  // language change, which has to rebuild that very tool; a hint is one of the
+  // 3.x addresses asking for a particular mode, which also has to take effect.
+  if (!force && !hint && currentId === tool.id && current) return;
 
   // Take the outgoing tool's work with us before it is destroyed, and give the
   // incoming one whatever it left behind last time.
   if (current && currentId) stash(currentId, current);
 
   current?.destroy?.();
-  current = tool.create(stashed.get(tool.id)?.live ?? null);
+  const carried = stashed.get(tool.id)?.live ?? null;
+  current = tool.create(hint ? { ...carried, ...hint } : carried);
   currentId = tool.id;
 
   clear(content).append(current.el);
@@ -320,10 +326,14 @@ function boot() {
     }
   });
 
-  window.addEventListener('hashchange', () => mount(toolIdFromHash(), { focus: true }));
+  window.addEventListener('hashchange', () => {
+    const route = routeFromHash();
+    mount(route.id, { focus: true, hint: route.hint });
+  });
 
   restoreCarried();
-  mount(toolIdFromHash());
+  const opening = routeFromHash();
+  mount(opening.id, { hint: opening.hint });
   initUpdates({ beforeReload: carryThroughReload });
 }
 
