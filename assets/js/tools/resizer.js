@@ -15,6 +15,7 @@ const PRESET_KEY = 'asset-manager-resizer-presets-v1';
 const LEGACY_PRESET_KEYS = ['bam-resizer-presets-v3', 'devtools-resizer-presets-v2'];
 const SELECTED_KEY = 'asset-manager-resizer-preset-v1';
 const BACKGROUND_KEY = 'asset-manager-resizer-background-v1';
+const APPLY_KEY = 'asset-manager-resizer-apply-v1';
 
 const BUILT_IN = [
   { id: 'top-product', name: 'Top Product', w: 264, h: 248 },
@@ -30,6 +31,10 @@ const MAX_SCALE = 5;
 const PREVIEW_MAX = 680;
 
 const isPresetId = (value) => typeof value === 'string' && value.length > 0;
+
+// Whether Fit, Fill, the scale slider and dragging move every loaded image or
+// only the one on screen.
+const isApply = (value) => value === 'all' || value === 'one';
 
 // Stored as one object so the swatch and the transparent/colour choice can
 // never disagree after a partial write.
@@ -87,6 +92,10 @@ export function createResizer(carried = null) {
   let items = carriedItems(carried);
   let index = Math.min(Math.max(Number(carried?.index) || 0, 0), Math.max(items.length - 1, 0));
   const current = () => items[index] ?? null;
+
+  let applyTo = loadStored(APPLY_KEY, isApply, 'all');
+  /** The images an adjustment touches: all of them, or just the one on screen. */
+  const targets = () => (applyTo === 'all' ? items : (current() ? [current()] : []));
 
   const storedBackground = loadStored(BACKGROUND_KEY, isBackground, null);
   let transparent = storedBackground ? storedBackground.transparent : true;
@@ -177,34 +186,38 @@ export function createResizer(carried = null) {
     }
   }
 
-  /** Fit or fill every loaded image, so one click covers the whole run. */
+  /** Fit or fill every loaded image. Used when the canvas itself changes. */
   function frameAll(mode) {
     for (const item of items) frame(mode, item);
     syncScaleControls();
     render();
   }
 
+  /** What the Fit and Fill buttons do: whichever images are being adjusted. */
+  function frameTargets(mode) {
+    for (const item of targets()) frame(mode, item);
+    syncScaleControls();
+    render();
+  }
+
   /** Keep the canvas centre fixed while the scale changes. */
   function rescale(next) {
-    const item = current();
     const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, next));
-    if (!item) { scaleLabel.textContent = `${Math.round(clamped * 100)}%`; return; }
-
-    if (!Number.isFinite(item.scale) || item.scale <= 0) {
-      item.scale = clamped;
-      scaleLabel.textContent = `${Math.round(clamped * 100)}%`;
-      render();
-      return;
-    }
-
-    const cx = size.w / 2;
-    const cy = size.h / 2;
-    item.position = {
-      x: cx - (cx - item.position.x) * (clamped / item.scale),
-      y: cy - (cy - item.position.y) * (clamped / item.scale),
-    };
-    item.scale = clamped;
     scaleLabel.textContent = `${Math.round(clamped * 100)}%`;
+
+    for (const item of targets()) {
+      if (!Number.isFinite(item.scale) || item.scale <= 0) {
+        item.scale = clamped;
+        continue;
+      }
+      const cx = size.w / 2;
+      const cy = size.h / 2;
+      item.position = {
+        x: cx - (cx - item.position.x) * (clamped / item.scale),
+        y: cy - (cy - item.position.y) * (clamped / item.scale),
+      };
+      item.scale = clamped;
+    }
     render();
   }
 
@@ -308,14 +321,18 @@ export function createResizer(carried = null) {
   // --- dragging ----------------------------------------------------------
 
   let dragging = false;
-  let dragStart = { clientX: 0, clientY: 0, x: 0, y: 0 };
+  let dragStart = { clientX: 0, clientY: 0 };
+  // Where each image being dragged started, so the whole set moves by the same
+  // offset instead of jumping to the position of the one under the pointer.
+  let dragFrom = [];
 
   canvas.addEventListener('pointerdown', (event) => {
     const item = current();
     if (!item) return;
     dragging = true;
     canvas.setPointerCapture(event.pointerId);
-    dragStart = { clientX: event.clientX, clientY: event.clientY, x: item.position.x, y: item.position.y };
+    dragStart = { clientX: event.clientX, clientY: event.clientY };
+    dragFrom = targets().map((entry) => ({ item: entry, x: entry.position.x, y: entry.position.y }));
   });
 
   canvas.addEventListener('pointermove', (event) => {
@@ -326,21 +343,23 @@ export function createResizer(carried = null) {
     const scaleX = rect.width ? size.w / rect.width : 1;
     const scaleY = rect.height ? size.h / rect.height : 1;
 
-    let x = dragStart.x + (event.clientX - dragStart.clientX) * scaleX;
-    let y = dragStart.y + (event.clientY - dragStart.clientY) * scaleY;
+    let dx = (event.clientX - dragStart.clientX) * scaleX;
+    let dy = (event.clientY - dragStart.clientY) * scaleY;
 
+    // Snapping follows the image on screen; the rest move with it.
+    const start = dragFrom.find((entry) => entry.item === item);
     const centredX = (size.w - item.image.width * item.scale) / 2;
     const centredY = (size.h - item.image.height * item.scale) / 2;
-    const snapX = Math.abs(x - centredX) < SNAP_PX;
-    const snapY = Math.abs(y - centredY) < SNAP_PX;
+    const snapX = start ? Math.abs(start.x + dx - centredX) < SNAP_PX : false;
+    const snapY = start ? Math.abs(start.y + dy - centredY) < SNAP_PX : false;
 
-    if (snapX) x = centredX;
-    if (snapY) y = centredY;
+    if (snapX) dx = centredX - start.x;
+    if (snapY) dy = centredY - start.y;
 
     guideV.hidden = !snapX;
     guideH.hidden = !snapY;
 
-    item.position = { x, y };
+    for (const entry of dragFrom) entry.item.position = { x: entry.x + dx, y: entry.y + dy };
     render();
   });
 
@@ -363,6 +382,36 @@ export function createResizer(carried = null) {
   const countLabel = h('span', { class: 'mono muted' });
   const stripRow = h('div', { class: 'row row--between' },
     h('span', { class: 'field__label' }, t('Loaded images')), countLabel);
+
+  const applyHint = h('p', { class: 'panel__hint' });
+
+  function applyChoiceButton(value, label) {
+    return h('button', {
+      type: 'button',
+      'aria-pressed': String(applyTo === value),
+      onClick: () => {
+        applyTo = value;
+        saveStored(APPLY_KEY, value);
+        syncApplyButtons();
+      },
+    }, t(label));
+  }
+
+  const applyAllButton = applyChoiceButton('all', 'All images');
+  const applyOneButton = applyChoiceButton('one', 'This image');
+
+  const applyRow = h('div', { class: 'row row--between' },
+    h('span', { class: 'field__label' }, t('Adjustments')),
+    h('div', { class: 'segmented', role: 'group', 'aria-label': t('Adjustments') },
+      applyAllButton, applyOneButton));
+
+  function syncApplyButtons() {
+    applyAllButton.setAttribute('aria-pressed', String(applyTo === 'all'));
+    applyOneButton.setAttribute('aria-pressed', String(applyTo === 'one'));
+    applyHint.textContent = applyTo === 'all'
+      ? t('Fit, Fill, the scale slider and dragging move every loaded image together.')
+      : t('Fit, Fill, the scale slider and dragging move only the image on screen. Click a thumbnail to work on another one.');
+  }
 
   function select(next) {
     if (next < 0 || next >= items.length) return;
@@ -637,8 +686,8 @@ export function createResizer(carried = null) {
     },
   }, t('Start over'));
 
-  const fitButton = h('button', { type: 'button', onClick: () => frameAll('contain') }, t('Fit'));
-  const fillButton = h('button', { type: 'button', onClick: () => frameAll('cover') }, t('Fill'));
+  const fitButton = h('button', { type: 'button', onClick: () => frameTargets('contain') }, t('Fit'));
+  const fillButton = h('button', { type: 'button', onClick: () => frameTargets('cover') }, t('Fill'));
 
   function setExportBusy(busy) {
     downloadButton.disabled = busy;
@@ -664,7 +713,7 @@ export function createResizer(carried = null) {
     h('div', { class: 'row row--between' },
       h('div', { class: 'segmented', role: 'group', 'aria-label': t('Placement') }, fitButton, fillButton),
       h('div', { class: 'row' }, startOverButton, downloadButton)),
-    h('div', { class: 'field' }, stripRow, strip),
+    h('div', { class: 'field' }, applyRow, applyHint, stripRow, strip),
     h('div', { class: 'field' },
       h('div', { class: 'row row--between' },
         h('span', { class: 'field__label' }, t('Scale')), scaleLabel),
@@ -686,6 +735,8 @@ export function createResizer(carried = null) {
     // download button that names the one file it produces.
     strip.hidden = !batch;
     stripRow.hidden = !batch;
+    applyRow.hidden = !batch;
+    applyHint.hidden = !batch;
     downloadLabel.textContent = batch ? t('Download all') : t('Download result');
   }
 
@@ -728,6 +779,7 @@ export function createResizer(carried = null) {
     item.position = { ...restore[position].position };
   });
   syncScaleControls();
+  syncApplyButtons();
   renderStrip();
   syncCanvasBox();
   updateLoadedState();
