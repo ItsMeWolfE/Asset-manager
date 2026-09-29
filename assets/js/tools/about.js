@@ -11,6 +11,7 @@ import { deployedRelease, onDeployedRelease } from '../core/update.js';
 
 // The documentation data uses the 2.x icon names.
 const ICON_MAP = {
+  Image: 'image',
   Crop: 'crop',
   Resize: 'resize',
   FileText: 'fileText',

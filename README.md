@@ -1,8 +1,8 @@
 # Asset Manager
 
-A single web page holding the five tools we use to get product content ready for
-the site: cropping and resizing photos, cleaning up supplier HTML, and fixing
-two kinds of spreadsheet.
+A single web page holding the three tools we use to get product content ready
+for the site: trimming, converting and placing photos, cleaning up supplier
+HTML, and turning a supplier list into the file the import expects.
 
 Everything runs inside your own browser. No file you open is ever uploaded, and
 closing the tab throws all of it away.
@@ -15,11 +15,9 @@ closing the tab throws all of it away.
 
 | Tool | What it does |
 | --- | --- |
-| **Image Optimiser** | Converts product photos to WebP or PNG in bulk, trimming the empty margin off them unless cropping is turned off. Optionally cuts the product out of its background too. |
-| **Smart Resizer** | Places one image, exactly where you want it, inside a fixed canvas size. |
+| **Images** | Two modes over one dropzone. *Optimise* converts product photos to WebP or PNG in bulk, trimming the empty margin off them unless Trim is off, and can cut the product out of its background. *Place* puts an image, exactly where you want it, inside a fixed canvas size. |
 | **HTML Cleaner** | Turns a supplier's messy description HTML into something safe to paste into the site. |
-| **Dragon Fixer** | Turns a Dragon stock export into the two-column file the import expects. |
-| **XLSX Fixer** | Pulls item codes out of any supplier list, with either the updated price or the stock value beside them. |
+| **Spreadsheets** | Pulls item codes out of any supplier list with either the updated price or the stock value beside them, and turns a Dragon stock export into the two-column file the import expects. The Output switch picks which of the three. |
 
 The **About** tab inside the app documents every tool in full — what it is for,
 how to use it step by step, and what to watch out for — in English and Hebrew.
@@ -183,7 +181,11 @@ assets/js/
     sheet.js                spreadsheet worker client
     sanitize.js             HTML sanitizer
     segment.js              background-removal client
-  tools/                    one module per tool
+  tools/
+    images.js               Optimise and Place, over one dropzone
+    cleaner.js              supplier HTML to something safe to paste
+    sheets.js               prices, stock and Dragon exports
+    about.js                the documentation page
   i18n/                     one file per language, plus the registry
   data/                     About copy and the changelog
   workers/crop-worker-source.js  image bounds analysis
@@ -260,7 +262,7 @@ tests for a particular language.
 A missing translation renders as English rather than as a blank, which makes a
 partial catalogue safe to ship. To find gaps, temporarily record the misses
 inside `t()` and click through every tool: strings passed as arguments to
-helpers like `segButton` never appear inside a `t(...)` call, so searching the
+helpers like `segmented()` never appear inside a `t(...)` call, so searching the
 source for them misses a good number.
 
 Release notes in `data/changelog.js` go through the same lookup, so translating
@@ -304,8 +306,8 @@ one, and nothing here should stop working because a third party did.
 
 - **SheetJS 0.18.5** — parsing XLSX is not worth reimplementing. Carried over
   verbatim inside the spreadsheet worker, along with the Dragon and Price column
-  logic. The stock half of the XLSX Fixer is appended to it as a second source
-  file rather than mixed into it.
+  logic. The stock half of the Spreadsheets tool is appended to it as a second
+  source file rather than mixed into it.
 - **ONNX Runtime Web 1.19.2 + U²-Net** — background removal, fetched only when
   somebody turns that option on.
 

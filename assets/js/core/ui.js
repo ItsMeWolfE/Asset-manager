@@ -136,6 +136,7 @@ export function createDropzone({ iconName, title, hint, buttonLabel, accept, mul
   }, buttonLabel);
 
   const heading = h('h3', null, title);
+  const hintLine = h('p', null, hint);
 
   const root = h('div', {
     class: 'dropzone',
@@ -156,7 +157,7 @@ export function createDropzone({ iconName, title, hint, buttonLabel, accept, mul
   },
     h('div', { class: 'dropzone__icon' }, icon(iconName, 22)),
     heading,
-    h('p', null, hint),
+    hintLine,
     button,
     input,
   );
@@ -169,6 +170,7 @@ export function createDropzone({ iconName, title, hint, buttonLabel, accept, mul
       input.disabled = busy;
     },
     setTitle(text) { heading.textContent = text; },
+    setHint(text) { hintLine.textContent = text; },
   };
 }
 

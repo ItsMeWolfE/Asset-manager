@@ -1,10 +1,16 @@
-// XLSX Fixer - pulls item codes out of a supplier list, together with either
-// the updated price or the 9/10 stock value the import expects.
+// Spreadsheets - pulls two columns out of a supplier list and writes them back
+// as a text-safe XLSX: item codes with either the updated price or the 9/10
+// stock value, or a Dragon export reduced to barcodes and availability.
 //
-// The header scoring, column choice and text-safe output all live in the
-// spreadsheet worker: the price half unchanged from 2.4.1, the stock half
-// beside it in vendor/stock-processor-source.js. This file handles input (a
-// workbook or a pasted table) and reports what the worker decided.
+// All three were separate jobs in the same worker before v4, behind two tools
+// that shared a dropzone, a log and an output format. They are one tool now,
+// and which of the three runs is the Output switch at the top.
+//
+// The header scoring, the column choice and the text-safe output all live in
+// the spreadsheet worker: the price half unchanged from 2.4.1, the stock half
+// beside it in vendor/stock-processor-source.js, and the Dragon half in the
+// bundle itself. This file handles input (a workbook or a pasted table) and
+// reports what the worker decided.
 
 import { h, icon } from '../core/dom.js';
 import { t, tf, plural } from '../core/i18n.js';
@@ -21,7 +27,7 @@ import { loadStored, saveStored } from '../core/prefs.js';
  * whitespace is collapsed to a single space and the direction marks are
  * dropped rather than carried into the exported item codes.
  */
-const BIDI_MARKS = /[\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g;
+const BIDI_MARKS = /[‎‏؜‪-‮⁦-⁩]/g;
 
 const cleanCell = (value) => String(value ?? '').replace(BIDI_MARKS, '').replace(/\s+/g, ' ').trim();
 
@@ -137,16 +143,26 @@ const isMode = (v) => v === 'file' || v === 'paste';
 // only bounds what a very long paste does to the textarea.
 const PREVIEW_ROWS = 200;
 
-export function createPrice(carried = null) {
+const isOutput = (v) => v === 'price' || v === 'stock' || v === 'dragon';
+
+// A Dragon export is read by the two headings it always has, and the only
+// choice it takes is which availability values to keep. Deliberately not
+// persisted: this output is reached rarely, and a filter remembered from weeks
+// ago would quietly shape a different export.
+const DRAGON_DEFAULT_FILTER = 'all';
+
+export function createSheets(carried = null) {
   let mode = loadStored(MODE_KEY, isMode, 'file');
 
   // What the file is being read for. Carried across a tool switch or a language
   // change, like the pasted table is, but deliberately not remembered between
   // visits: which of the two columns a run writes, and which value it writes,
   // are too easy to leave set from last week and never look at.
-  let category = carried?.category === 'stock' ? 'stock' : 'price';
+  let output = isOutput(carried?.output) ? carried.output : 'price';
   let stockSource = carried?.stockSource === 'all' ? 'all' : 'detect';
   let stockValue = carried?.stockValue === '9' ? '9' : '10';
+  let dragonFilter = ['all', 'in', 'out'].includes(carried?.dragonFilter)
+    ? carried.dragonFilter : DRAGON_DEFAULT_FILTER;
 
   let busy = false;
   let pastedGrid = carried?.grid ?? null;
@@ -205,12 +221,21 @@ export function createPrice(carried = null) {
   // Running a job
   // -------------------------------------------------------------------------
 
-  /** The worker message for the current category, given one input source. */
-  const jobFor = (source) => (category === 'price'
-    ? { tool: 'price', ...source }
-    : { tool: 'stock', mode: stockSource, value: stockValue, ...source });
+  /** The worker message for the current output, given one input source. */
+  function jobFor(source) {
+    if (output === 'price') return { tool: 'price', ...source };
+    if (output === 'stock') return { tool: 'stock', mode: stockSource, value: stockValue, ...source };
+    return { tool: 'dragon', buffer: source.buffer, filter: dragonFilter };
+  }
 
-  function reportResult(result, fallbackName) {
+  const SUFFIX = { price: '_price_fixed.xlsx', stock: '_stock_fixed.xlsx', dragon: '_dragon_fixed.xlsx' };
+
+  /**
+   * What the worker decided, line by line. A Dragon run reports none of this:
+   * it finds its two columns by their exact headings, so there is nothing that
+   * could have been chosen differently and nothing to second-guess.
+   */
+  function reportColumns(result) {
     // A headerless list has no heading to name, and the columns are reported by
     // their letter instead - so the log still says which two were read.
     if (result.headerless) {
@@ -222,7 +247,7 @@ export function createPrice(carried = null) {
 
     log.add(`${t('Item column')}: ${result.itemHeader}`);
 
-    if (category === 'price') {
+    if (output === 'price') {
       log.add(`${t('Price column')}: ${result.priceHeader}`);
 
       // The verb has to agree with the count, so the whole clause is pluralised.
@@ -263,15 +288,23 @@ export function createPrice(carried = null) {
     if (result.unsafeNumericItems > 0) {
       log.error(t('Some item codes were stored as unsafe large numbers. Excel had already rounded them in the source file; ask the supplier to send codes as text.'));
     }
+  }
 
-    const suffix = category === 'price' ? '_price_fixed.xlsx' : '_stock_fixed.xlsx';
-    const name = result.filename || `${fallbackName}${suffix}`;
+  function reportResult(result, fallbackName) {
+    if (output === 'dragon') log.add(t('Barcodes were read as formatted text, so leading zeroes survived.'));
+    else reportColumns(result);
+
+    const name = result.filename || `${fallbackName}${SUFFIX[output]}`;
     saveBlob(new Blob([result.buffer], { type: XLSX_MIME }), name);
+
+    const unit = output === 'dragon'
+      ? plural(result.count ?? 0, 'product', 'products')
+      : plural(result.count ?? 0, 'row', 'rows');
 
     status.set({
       phase: 'success',
       title: t('Processing complete'),
-      summary: `${plural(result.count ?? 0, 'row', 'rows')} ${t('exported. Download started.')}`,
+      summary: `${unit} ${t('exported. Download started.')}`,
       progress: 100,
     });
     log.success(`${t('Download started')}: ${name}`);
@@ -294,7 +327,12 @@ export function createPrice(carried = null) {
 
     setBusy(true);
     log.clear();
-    status.set({ phase: 'processing', title: `${t('Opening')} ${file.name}`, summary: '', progress: 5 });
+    status.set({
+      phase: 'processing',
+      title: `${t('Opening')} ${file.name}`,
+      summary: output === 'dragon' ? t('Barcode text and stock values are normalized locally.') : '',
+      progress: 5,
+    });
     log.add(`${t('Reading file')}: ${file.name}`);
 
     const baseName = file.name.replace(/\.[^/.]+$/, '') || 'prices';
@@ -341,9 +379,9 @@ export function createPrice(carried = null) {
   // -------------------------------------------------------------------------
 
   const dropzone = createDropzone({
-    iconName: 'archive',
-    title: t('Choose or drop a supplier spreadsheet'),
-    hint: t('Accepts XLSX, XLS and CSV. Every worksheet is scanned and the best item-code column is chosen, together with the price or stock column beside it.'),
+    iconName: 'table',
+    title: t('Choose or drop a spreadsheet'),
+    hint: '',
     buttonLabel: t('Upload file'),
     accept: '.xlsx,.xls,.csv',
     multiple: false,
@@ -414,14 +452,42 @@ export function createPrice(carried = null) {
 
   function setMode(value) {
     mode = value;
-    filePanel.hidden = value !== 'file';
-    pastePanel.hidden = value !== 'paste';
+    syncInput();
   }
 
   const modeSwitch = segmented(t('Input mode'), () => mode, (value) => {
     setMode(value);
     saveStored(MODE_KEY, value);
   }, [['file', 'Upload file', 'upload'], ['paste', 'Paste table', 'clipboard']]);
+
+  const inputHint = h('p', { class: 'panel__hint' });
+
+  const DROP_HINT = {
+    price: 'Accepts XLSX, XLS and CSV. Every worksheet is scanned and the best item-code column is chosen, together with the price column beside it.',
+    stock: 'Accepts XLSX, XLS and CSV. Every worksheet is scanned and the best item-code column is chosen, together with the stock column beside it.',
+    dragon: 'Accepts XLSX, XLS and CSV. The barcode and availability columns are found by their headings, and barcodes are read as formatted text so leading zeroes survive.',
+  };
+
+  const INPUT_HINT = {
+    price: 'Check the log: it names the worksheet and the columns it chose.',
+    stock: 'Check the log: it names the worksheet and the columns it chose.',
+    dragon: 'A Dragon export is read from a file. The two columns it needs are always named the same, so there is nothing to choose.',
+  };
+
+  /**
+   * A Dragon export is only ever a file: the worker reads the workbook itself
+   * rather than a grid, so the paste box has nothing to hand it. The switch
+   * goes away with it rather than sitting there refusing to work.
+   */
+  function syncInput() {
+    const pasteable = output !== 'dragon';
+    const showing = pasteable && mode === 'paste';
+    modeSwitch.hidden = !pasteable;
+    filePanel.hidden = showing;
+    pastePanel.hidden = !showing;
+    dropzone.setHint(t(DROP_HINT[output]));
+    inputHint.textContent = t(INPUT_HINT[output]);
+  }
 
   // -------------------------------------------------------------------------
   // What to extract
@@ -451,31 +517,41 @@ export function createPrice(carried = null) {
     valueRow,
     stockHint);
 
-  function setCategory(value) {
-    category = value;
+  const dragonPanel = h('div', { class: 'stack' },
+    h('div', { class: 'row' },
+      h('span', { class: 'field__label' }, t('Stock filter')),
+      segmented(t('Stock filter'), () => dragonFilter, (value) => { dragonFilter = value; },
+        [['all', 'All products'], ['in', 'In stock (10)', 'check'], ['out', 'Out of stock (9)', 'x']])),
+    h('p', { class: 'panel__hint' }, t('Applied when the file is processed, so set it before loading.')));
+
+  function setOutput(value) {
+    output = value;
     stockPanel.hidden = value !== 'stock';
+    dragonPanel.hidden = value !== 'dragon';
+    syncInput();
   }
 
-  const categorySwitch = segmented(t('Output'), () => category, setCategory,
-    [['price', 'Prices', 'badgeDollar'], ['stock', 'Stock', 'archive']]);
+  const outputSwitch = segmented(t('Output'), () => output, setOutput,
+    [['price', 'Prices', 'badgeDollar'], ['stock', 'Stock', 'archive'], ['dragon', 'Dragon', 'table']]);
 
   const root = h('div', { class: 'stack' },
-    pageHead('archive', t('XLSX Fixer'),
-      t('Extract item codes with updated prices or stock values into text-safe XLSX output.')),
+    pageHead('table', t('Spreadsheets'),
+      t('Turn a supplier list or a Dragon export into the two-column file the import expects.')),
 
     h('section', { class: 'panel' },
       h('div', { class: 'panel__head' },
         h('div', null,
           h('h2', { class: 'panel__title' }, t('Output')),
-          h('p', { class: 'panel__hint' }, t('Prices, or the 9 and 10 stock values the import expects.'))),
-        categorySwitch),
-      stockPanel),
+          h('p', { class: 'panel__hint' }, t('Item codes with prices, item codes with the 9 and 10 stock values, or a Dragon export.'))),
+        outputSwitch),
+      stockPanel,
+      dragonPanel),
 
     h('section', { class: 'panel' },
       h('div', { class: 'panel__head' },
         h('div', null,
           h('h2', { class: 'panel__title' }, t('Input')),
-          h('p', { class: 'panel__hint' }, t('Check the log: it names the worksheet and the columns it chose.'))),
+          inputHint),
         modeSwitch),
       filePanel,
       pastePanel),
@@ -484,24 +560,24 @@ export function createPrice(carried = null) {
     log.el,
   );
 
-  setCategory(category);
+  setOutput(output);
   setStockSource(stockSource);
   setMode(mode);
   if (carried?.text) pasteArea.value = carried.text;
   syncPasteInfo();
 
+  const state = () => ({
+    grid: pastedGrid, text: pasteArea.value, output, stockSource, stockValue, dragonFilter,
+  });
+
   return {
     el: root,
-    getState() {
-      return { grid: pastedGrid, text: pasteArea.value, category, stockSource, stockValue };
-    },
+    getState: state,
     // A grid of strings and the text behind it are both JSON, so they survive
     // the reload that applying an update performs. What the run was set to
     // write goes with them, so an update applied mid-job does not quietly
     // change the answer.
-    getPortableState() {
-      return { grid: pastedGrid, text: pasteArea.value, category, stockSource, stockValue };
-    },
+    getPortableState: state,
     destroy() {},
   };
 }

@@ -6,23 +6,29 @@ import { prefs, setPrefs, applyPrefs, onPrefsChange, THEMES, THEME_BY_ID, SIZES 
 import { APP_VERSION } from './core/version.js';
 import { initUpdates, refreshUpdateBanner } from './core/update.js';
 
-import { createCropper } from './tools/cropper.js';
-import { createResizer } from './tools/resizer.js';
+import { createImages } from './tools/images.js';
 import { createCleaner } from './tools/cleaner.js';
-import { createDragon } from './tools/dragon.js';
-import { createPrice } from './tools/price.js';
+import { createSheets } from './tools/sheets.js';
 import { createAbout } from './tools/about.js';
 
 const TOOLS = [
-  { id: 'cropper', label: 'Image Optimiser', description: 'Convert product images to WebP or PNG, with optional border cropping.', icon: 'crop', create: createCropper },
-  { id: 'resizer', label: 'Smart Resizer', description: 'Place images precisely inside a fixed output canvas.', icon: 'resize', create: createResizer },
-  { id: 'transformer', label: 'HTML Cleaner', description: 'Clean and normalize product-description HTML safely.', icon: 'fileText', create: createCleaner },
-  { id: 'dragon', label: 'Dragon Fixer', description: 'Normalize Dragon inventory spreadsheets for import.', icon: 'table', create: createDragon },
-  { id: 'price', label: 'XLSX Fixer', description: 'Extract item codes with updated prices or stock values into text-safe XLSX output.', icon: 'archive', create: createPrice },
+  { id: 'images', label: 'Images', description: 'Trim and convert product photos in bulk, or place one inside a fixed canvas.', icon: 'image', create: createImages },
+  { id: 'cleaner', label: 'HTML Cleaner', description: 'Clean and normalize product-description HTML safely.', icon: 'fileText', create: createCleaner },
+  { id: 'sheets', label: 'Spreadsheets', description: 'Item codes with prices or stock values, and Dragon exports, as the import expects them.', icon: 'table', create: createSheets },
   { id: 'about', label: 'About', description: 'How each tool works, from start to finish.', icon: 'info', create: createAbout },
 ];
 
-const DEFAULT_TOOL = 'cropper';
+// Where the six-tool addresses of 3.x land now that there are four. Bookmarks
+// and anything the About page linked to keep working.
+const LEGACY_IDS = {
+  cropper: 'images',
+  resizer: 'images',
+  transformer: 'cleaner',
+  dragon: 'sheets',
+  price: 'sheets',
+};
+
+const DEFAULT_TOOL = 'images';
 
 let current = null;
 let currentId = null;
@@ -110,7 +116,8 @@ function restoreCarried() {
 
 function toolIdFromHash() {
   const id = window.location.hash.replace(/^#\/?/, '');
-  return TOOLS.some((tool) => tool.id === id) ? id : DEFAULT_TOOL;
+  if (TOOLS.some((tool) => tool.id === id)) return id;
+  return LEGACY_IDS[id] ?? DEFAULT_TOOL;
 }
 
 function mount(id, { focus = false, force = false } = {}) {
