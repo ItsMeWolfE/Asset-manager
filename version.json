@@ -1,8 +1,8 @@
 {
-  "version": "3.9.0",
+  "version": "3.9.1",
   "build": "dev",
   "built": "dev",
   "released": "2026-09-29",
-  "title": "The Batch Cropper is now the Image Optimiser",
-  "notes": "The Batch Cropper has become the Image Optimiser. It still trims the empty border off product photos, but cropping is now a switch, and turning it off leaves every pixel alone and converts the file only. A second switch picks the format: Product images (WebP) by default, or Page images (PNG) for the places that cannot take a WebP. Both are lossless and keep transparency, and WebP is far smaller."
+  "title": "WebP comes out at quality 92",
+  "notes": "The Image Optimiser now writes WebP at quality 92 instead of losslessly. A lossless WebP has to reproduce a JPEG's own compression noise exactly, which made converted supplier photos come out roughly twice the size of the JPEG they came from; the same files are now about a quarter of it. Quality 92 looks the same on product photography. PNG is unaffected, and transparency is untouched in both formats, so a cut-out product keeps exactly the edge it had."
 }

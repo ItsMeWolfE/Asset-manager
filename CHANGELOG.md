@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.9.1 - 2026-09-29
+
+**WebP comes out at quality 92**
+
+The Image Optimiser now writes WebP at quality 92 instead of losslessly. A lossless WebP has to reproduce a JPEG's own compression noise exactly, which made converted supplier photos come out roughly twice the size of the JPEG they came from; the same files are now about a quarter of it. Quality 92 looks the same on product photography. PNG is unaffected, and transparency is untouched in both formats, so a cut-out product keeps exactly the edge it had.
+
 ## 3.9.0 - 2026-09-29
 
 **The Batch Cropper is now the Image Optimiser**
