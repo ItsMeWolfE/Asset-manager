@@ -38,10 +38,7 @@ export const WEBP_OK = (() => {
 export const OUTPUT_MIME = WEBP_OK ? 'image/webp' : 'image/png';
 export const OUTPUT_EXT = WEBP_OK ? 'webp' : 'png';
 
-/**
- * The formats a run can be asked for. WebP is lossless here, so choosing it is
- * a straight size win over PNG rather than a quality trade.
- */
+/** The formats a run can be asked for. The caller picks the quality. */
 export const FORMATS = {
   webp: { mime: 'image/webp', ext: 'webp' },
   png: { mime: 'image/png', ext: 'png' },
@@ -132,12 +129,19 @@ export async function decodeImage(file) {
   }
 }
 
-/** Encode a canvas losslessly, defaulting to WebP where the browser has it. */
-export function encodeCanvas(canvas, mime = OUTPUT_MIME) {
+/**
+ * Encode a canvas, defaulting to WebP where the browser has it.
+ *
+ * `quality` is 1 - lossless - unless a caller asks for less. It only reaches
+ * WebP: PNG has no lossy mode, so the browser ignores it there and a PNG comes
+ * out lossless whatever is passed. Lossy WebP still carries its alpha channel in
+ * a separate lossless chunk, so transparency survives untouched either way.
+ */
+export function encodeCanvas(canvas, mime = OUTPUT_MIME, quality = 1) {
   return new Promise((resolve, reject) => {
     const fallback = () => {
       try {
-        const url = canvas.toDataURL(mime, 1);
+        const url = canvas.toDataURL(mime, quality);
         const [meta, data] = url.split(',');
         const binary = atob(data);
         const bytes = new Uint8Array(binary.length);
@@ -151,7 +155,7 @@ export function encodeCanvas(canvas, mime = OUTPUT_MIME) {
     if (typeof canvas.toBlob !== 'function') { fallback(); return; }
 
     try {
-      canvas.toBlob((blob) => (blob ? resolve(blob) : fallback()), mime, 1);
+      canvas.toBlob((blob) => (blob ? resolve(blob) : fallback()), mime, quality);
     } catch {
       fallback();
     }
@@ -210,7 +214,7 @@ function edgeColour(data, w, h) {
  * the border genuinely is.
  */
 export async function processImage(file, options = {}) {
-  const { crop = true, square = false, removeBackground = false, mime = OUTPUT_MIME } = options;
+  const { crop = true, square = false, removeBackground = false, mime = OUTPUT_MIME, quality = 1 } = options;
   const { source, cleanup } = await decodeImage(file);
   let scratch = null;
 
@@ -310,7 +314,7 @@ export async function processImage(file, options = {}) {
       ctx.drawImage(drawSource, x0, y0, x1 - x0, y1 - y0, x0 - sx, y0 - sy, x1 - x0, y1 - y0);
     }
 
-    const blob = await encodeCanvas(out, mime);
+    const blob = await encodeCanvas(out, mime, quality);
     out.width = 1;
     out.height = 1;
     return blob;

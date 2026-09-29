@@ -26,6 +26,15 @@ const zipName = (cropping) => (cropping ? 'tight_cropped.zip' : 'converted_image
 // sequential because browsers throttle rapid successive downloads.
 const ZIP_CONCURRENCY = 2;
 
+// What every run encodes at. 92 is visually indistinguishable from lossless on
+// product photography while being a fraction of the size - a lossless WebP of an
+// already-lossy JPEG comes out roughly twice as big as the JPEG, because it has
+// to preserve the JPEG's own compression noise exactly.
+//
+// It reaches WebP only. PNG has no lossy mode, so a PNG is lossless whatever is
+// passed, and either format keeps its alpha channel intact.
+const QUALITY = 0.92;
+
 export function createCropper() {
   let phase = 'idle';
   let outputMode = loadStored(MODE_KEY, isMode, 'zip');
@@ -180,6 +189,7 @@ export function createCropper() {
             square: crop && shape === 'square',
             removeBackground: cutOut,
             mime,
+            quality: QUALITY,
           });
           if (!blob) {
             skipped += 1;
@@ -274,7 +284,7 @@ export function createCropper() {
         h('div', null,
           h('h2', { class: 'panel__title' }, t('File format')),
           h('p', { class: 'panel__hint' }, canWebp
-            ? t('Both are lossless and keep transparency. WebP files are much smaller, so use it unless something downstream cannot read WebP.')
+            ? t('WebP is saved at quality 92, which looks the same and is a fraction of the size. PNG is lossless. Both keep transparency.')
             : t('This browser has no WebP encoder, so everything comes out as PNG.'))),
         h('div', { class: 'segmented', role: 'group', 'aria-label': t('File format') },
           segButton('format', 'webp', 'Product images (WebP)', 'image', (value) => { format = value; saveStored(FORMAT_KEY, value); syncButtons(); }),
