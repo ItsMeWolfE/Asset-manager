@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.9.0 - 2026-09-29
+
+**The Batch Cropper is now the Image Optimiser**
+
+The Batch Cropper has become the Image Optimiser. It still trims the empty border off product photos, but cropping is now a switch, and turning it off leaves every pixel alone and converts the file only. A second switch picks the format: Product images (WebP) by default, or Page images (PNG) for the places that cannot take a WebP. Both are lossless and keep transparency, and WebP is far smaller.
+
 ## 3.8.1 - 2026-09-29
 
 **The resizer says it is loading**
