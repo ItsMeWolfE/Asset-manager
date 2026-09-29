@@ -15,7 +15,7 @@ import { createAbout } from './tools/about.js';
 
 const TOOLS = [
   { id: 'cropper', label: 'Batch Cropper', description: 'Remove empty borders from product images and export WebP files.', icon: 'crop', create: createCropper },
-  { id: 'resizer', label: 'Smart Resizer', description: 'Place an image precisely inside a fixed output canvas.', icon: 'resize', create: createResizer },
+  { id: 'resizer', label: 'Smart Resizer', description: 'Place images precisely inside a fixed output canvas.', icon: 'resize', create: createResizer },
   { id: 'transformer', label: 'HTML Cleaner', description: 'Clean and normalize product-description HTML safely.', icon: 'fileText', create: createCleaner },
   { id: 'dragon', label: 'Dragon Fixer', description: 'Normalize Dragon inventory spreadsheets for import.', icon: 'table', create: createDragon },
   { id: 'price', label: 'XLSX Fixer', description: 'Extract item codes with updated prices or stock values into text-safe XLSX output.', icon: 'archive', create: createPrice },

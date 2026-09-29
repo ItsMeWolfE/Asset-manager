@@ -1,11 +1,15 @@
-// Smart Resizer - place one image precisely inside a fixed output canvas.
+// Smart Resizer - place images precisely inside a fixed output canvas.
+//
+// One image or many: the images loaded in a run share the canvas size and the
+// background, each keeps its own scale and position, and the run exports as a
+// single file or as one ZIP.
 
 import { h, icon, clear } from '../core/dom.js';
-import { t } from '../core/i18n.js';
+import { t, tf, plural } from '../core/i18n.js';
 import { loadStored, saveStored } from '../core/prefs.js';
-import { createDropzone, pageHead, toast } from '../core/ui.js';
+import { createDropzone, createStatus, pageHead, toast } from '../core/ui.js';
 import { encodeCanvas, OUTPUT_EXT } from '../core/image.js';
-import { saveBlob, safeName } from '../core/files.js';
+import { StoreZip, saveBlob, safeName } from '../core/files.js';
 
 const PRESET_KEY = 'asset-manager-resizer-presets-v1';
 const LEGACY_PRESET_KEYS = ['bam-resizer-presets-v3', 'devtools-resizer-presets-v2'];
@@ -39,6 +43,32 @@ const isPresetList = (value) => Array.isArray(value) && value.every((preset) =>
   Number.isInteger(preset.w) && Number.isInteger(preset.h) &&
   preset.w > 0 && preset.h > 0);
 
+/**
+ * Both shapes the stash can hand back: the batch one this version writes, and
+ * the single image 3.x left behind.
+ */
+function carriedItems(carried) {
+  if (Array.isArray(carried?.items)) {
+    return carried.items
+      .filter((entry) => entry?.image)
+      .map((entry) => ({
+        image: entry.image,
+        baseName: entry.baseName ?? 'image',
+        objectUrl: entry.objectUrl ?? null,
+        scale: entry.scale ?? 1,
+        position: entry.position ? { ...entry.position } : { x: 0, y: 0 },
+      }));
+  }
+  if (!carried?.image) return [];
+  return [{
+    image: carried.image,
+    baseName: carried.baseName ?? 'image',
+    objectUrl: carried.objectUrl ?? null,
+    scale: carried.scale ?? 1,
+    position: carried.position ? { ...carried.position } : { x: 0, y: 0 },
+  }];
+}
+
 export function createResizer(carried = null) {
   let presets = LEGACY_PRESET_KEYS.reduce(
     (fallback, key) => loadStored(key, isPresetList, fallback),
@@ -52,19 +82,24 @@ export function createResizer(carried = null) {
   let presetId = opening?.id ?? 'top-product';
   let size = { w: opening?.w ?? 264, h: opening?.h ?? 248 };
 
-  let image = carried?.image ?? null;
-  let baseName = carried?.baseName ?? 'image';
-  let scale = carried?.scale ?? 1;
-  let position = carried?.position ? { ...carried.position } : { x: 0, y: 0 };
+  // Every loaded image, in the order it was chosen. Each item carries its own
+  // scale and position; the canvas size and the background are shared.
+  let items = carriedItems(carried);
+  let index = Math.min(Math.max(Number(carried?.index) || 0, 0), Math.max(items.length - 1, 0));
+  const current = () => items[index] ?? null;
+
   const storedBackground = loadStored(BACKGROUND_KEY, isBackground, null);
   let transparent = storedBackground ? storedBackground.transparent : true;
   let background = storedBackground ? storedBackground.colour : '#ffffff';
-  let objectUrl = carried?.objectUrl ?? null;
-  // Set once the object URL has been handed to main.js's stash, which holds it
-  // for whenever this tool is mounted again. Revoking it in destroy would break
-  // the image the next instance restores. At most one is ever live: loading
-  // another image revokes the previous one, as does starting over.
+
+  // Set once the items have been handed to main.js's stash, which holds them
+  // for whenever this tool is mounted again. Revoking their object URLs in
+  // destroy would break the images the next instance restores.
   let handedOver = false;
+  // Bumped by every load and by Start over, so a decode that finishes after
+  // the set it belongs to has been replaced is dropped instead of appended.
+  let loadToken = 0;
+  let exporting = false;
 
   const canvas = h('canvas', { width: size.w, height: size.h });
   const guideV = h('div', { class: 'guide guide--v' });
@@ -74,23 +109,33 @@ export function createResizer(carried = null) {
 
   const canvasWrap = h('div', { class: 'canvas-wrap' }, canvas, guideV, guideH);
   const errorLine = h('p', { class: 'error-text' });
+  const status = createStatus();
+  status.el.hidden = true;
 
   // --- rendering ---------------------------------------------------------
+
+  /** Paint one item, or just the background when there is none. */
+  function paint(ctx, item, target) {
+    ctx.clearRect(0, 0, target.w, target.h);
+    if (!transparent) {
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, target.w, target.h);
+    }
+    if (!item?.image) return;
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+      item.image,
+      item.position.x, item.position.y,
+      item.image.width * item.scale, item.image.height * item.scale,
+    );
+  }
 
   function render() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
-    ctx.clearRect(0, 0, size.w, size.h);
-    if (!transparent) {
-      ctx.fillStyle = background;
-      ctx.fillRect(0, 0, size.w, size.h);
-    }
-    if (image) {
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(image, position.x, position.y, image.width * scale, image.height * scale);
-    }
+    paint(ctx, current(), size);
   }
 
   function syncCanvasBox() {
@@ -101,10 +146,18 @@ export function createResizer(carried = null) {
     render();
   }
 
-  /** Fit shows the whole image; fill covers the canvas. */
-  function frame(mode, targetSize = size, source = image) {
-    if (!source) return;
+  function syncScaleControls() {
+    const item = current();
+    const percent = Math.round((item?.scale ?? 1) * 100);
+    scaleInput.value = String(percent);
+    scaleLabel.textContent = `${percent}%`;
+  }
 
+  /** Fit shows the whole image; fill covers the canvas. */
+  function frame(mode, item = current(), targetSize = size) {
+    if (!item?.image) return;
+
+    const source = item.image;
     const sw = source.naturalWidth || source.width;
     const sh = source.naturalHeight || source.height;
     if (!sw || !sh) return;
@@ -113,67 +166,142 @@ export function createResizer(carried = null) {
       ? Math.max(targetSize.w / sw, targetSize.h / sh)
       : Math.min(targetSize.w / sw, targetSize.h / sh);
 
-    scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, ratio));
-    position = {
-      x: (targetSize.w - sw * scale) / 2,
-      y: (targetSize.h - sh * scale) / 2,
+    item.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, ratio));
+    item.position = {
+      x: (targetSize.w - sw * item.scale) / 2,
+      y: (targetSize.h - sh * item.scale) / 2,
     };
-    scaleInput.value = String(Math.round(scale * 100));
-    scaleLabel.textContent = `${Math.round(scale * 100)}%`;
+    if (item === current()) {
+      syncScaleControls();
+      render();
+    }
+  }
+
+  /** Fit or fill every loaded image, so one click covers the whole run. */
+  function frameAll(mode) {
+    for (const item of items) frame(mode, item);
+    syncScaleControls();
     render();
   }
 
   /** Keep the canvas centre fixed while the scale changes. */
   function rescale(next) {
+    const item = current();
     const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, next));
-    if (!Number.isFinite(scale) || scale <= 0) { scale = clamped; render(); return; }
+    if (!item) { scaleLabel.textContent = `${Math.round(clamped * 100)}%`; return; }
+
+    if (!Number.isFinite(item.scale) || item.scale <= 0) {
+      item.scale = clamped;
+      scaleLabel.textContent = `${Math.round(clamped * 100)}%`;
+      render();
+      return;
+    }
 
     const cx = size.w / 2;
     const cy = size.h / 2;
-    position = {
-      x: cx - (cx - position.x) * (clamped / scale),
-      y: cy - (cy - position.y) * (clamped / scale),
+    item.position = {
+      x: cx - (cx - item.position.x) * (clamped / item.scale),
+      y: cy - (cy - item.position.y) * (clamped / item.scale),
     };
-    scale = clamped;
-    scaleLabel.textContent = `${Math.round(scale * 100)}%`;
+    item.scale = clamped;
+    scaleLabel.textContent = `${Math.round(clamped * 100)}%`;
     render();
   }
 
   // --- image loading -----------------------------------------------------
 
-  function loadFile(file) {
-    if (!file || !file.type.startsWith('image/')) {
+  function releaseItems() {
+    for (const item of items) {
+      if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
+    }
+  }
+
+  /** Decode one file, or resolve null when it cannot be read as an image. */
+  function decodeFile(file) {
+    return new Promise((resolve) => {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => resolve({
+        image: img,
+        baseName: file.name.replace(/\.[^/.]+$/, '') || 'image',
+        objectUrl,
+        scale: 1,
+        position: { x: 0, y: 0 },
+      });
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(null);
+      };
+      img.src = objectUrl;
+    });
+  }
+
+  /**
+   * Load a selection. A new selection replaces the previous one, exactly as a
+   * second image replaced the first before batches existed.
+   */
+  async function loadFiles(fileList) {
+    if (exporting) return;
+
+    const files = Array.from(fileList || []).filter((file) => file?.type?.startsWith('image/'));
+    if (!files.length) {
       errorLine.textContent = t('Choose a supported image file.');
       return;
     }
+
     errorLine.textContent = '';
+    const token = ++loadToken;
+    dropzone.setBusy(true);
 
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
-    objectUrl = URL.createObjectURL(file);
+    let decoded;
+    try {
+      decoded = await Promise.all(files.map(decodeFile));
+    } finally {
+      if (loadToken === token) dropzone.setBusy(false);
+    }
 
-    const img = new Image();
-    img.onload = () => {
-      image = img;
-      baseName = file.name.replace(/\.[^/.]+$/, '') || 'image';
-      frame('contain');
-      updateLoadedState();
-    };
-    img.onerror = () => {
-      errorLine.textContent = t('The image could not be decoded.');
-      if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
-    };
-    img.src = objectUrl;
+    // Start over, or another selection, landed while this one was decoding.
+    if (loadToken !== token) {
+      for (const item of decoded) {
+        if (item?.objectUrl) URL.revokeObjectURL(item.objectUrl);
+      }
+      return;
+    }
+
+    releaseItems();
+    items = decoded.filter(Boolean);
+    index = 0;
+
+    const failed = files.length - items.length;
+    if (failed && files.length === 1) errorLine.textContent = t('The image could not be decoded.');
+    else if (failed) {
+      errorLine.textContent = tf('{count} of {total} files could not be decoded.', {
+        count: failed, total: files.length,
+      });
+    }
+
+    frameAll('contain');
+    renderStrip();
+    updateLoadedState();
+    render();
   }
 
   function onPaste(event) {
-    if (!event.clipboardData) return;
+    if (exporting || !event.clipboardData) return;
     if (event.target.closest('input, textarea, [contenteditable="true"]')) return;
 
-    const item = Array.from(event.clipboardData.items).find((entry) => entry.type.startsWith('image/'));
-    const file = item?.getAsFile();
-    if (file) {
+    const files = [];
+    Array.from(event.clipboardData.items).forEach((entry, position) => {
+      if (!entry.type.startsWith('image/')) return;
+      const file = entry.getAsFile();
+      if (file) {
+        files.push(new File([file], `pasted_${Date.now()}_${position}.png`, { type: file.type || 'image/png' }));
+      }
+    });
+
+    if (files.length) {
       event.preventDefault();
-      loadFile(file);
+      loadFiles(files);
     }
   }
 
@@ -183,14 +311,16 @@ export function createResizer(carried = null) {
   let dragStart = { clientX: 0, clientY: 0, x: 0, y: 0 };
 
   canvas.addEventListener('pointerdown', (event) => {
-    if (!image) return;
+    const item = current();
+    if (!item) return;
     dragging = true;
     canvas.setPointerCapture(event.pointerId);
-    dragStart = { clientX: event.clientX, clientY: event.clientY, x: position.x, y: position.y };
+    dragStart = { clientX: event.clientX, clientY: event.clientY, x: item.position.x, y: item.position.y };
   });
 
   canvas.addEventListener('pointermove', (event) => {
-    if (!dragging || !image) return;
+    const item = current();
+    if (!dragging || !item) return;
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = rect.width ? size.w / rect.width : 1;
@@ -199,8 +329,8 @@ export function createResizer(carried = null) {
     let x = dragStart.x + (event.clientX - dragStart.clientX) * scaleX;
     let y = dragStart.y + (event.clientY - dragStart.clientY) * scaleY;
 
-    const centredX = (size.w - image.width * scale) / 2;
-    const centredY = (size.h - image.height * scale) / 2;
+    const centredX = (size.w - item.image.width * item.scale) / 2;
+    const centredY = (size.h - item.image.height * item.scale) / 2;
     const snapX = Math.abs(x - centredX) < SNAP_PX;
     const snapY = Math.abs(y - centredY) < SNAP_PX;
 
@@ -210,7 +340,7 @@ export function createResizer(carried = null) {
     guideV.hidden = !snapX;
     guideH.hidden = !snapY;
 
-    position = { x, y };
+    item.position = { x, y };
     render();
   });
 
@@ -226,6 +356,46 @@ export function createResizer(carried = null) {
 
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
+
+  // --- the loaded set ----------------------------------------------------
+
+  const strip = h('div', { class: 'thumbs', role: 'group', 'aria-label': t('Loaded images') });
+  const countLabel = h('span', { class: 'mono muted' });
+  const stripRow = h('div', { class: 'row row--between' },
+    h('span', { class: 'field__label' }, t('Loaded images')), countLabel);
+
+  function select(next) {
+    if (next < 0 || next >= items.length) return;
+    index = next;
+    syncScaleControls();
+    syncStrip();
+    render();
+  }
+
+  function syncStrip() {
+    countLabel.textContent = items.length ? `${index + 1} / ${items.length}` : '';
+    Array.from(strip.children).forEach((button, position) => {
+      button.setAttribute('aria-pressed', String(position === index));
+      button.dataset.current = position === index ? 'true' : '';
+    });
+    const active = strip.children[index];
+    active?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }
+
+  function renderStrip() {
+    clear(strip);
+    items.forEach((item, position) => {
+      strip.append(h('button', {
+        type: 'button',
+        class: 'thumb',
+        title: item.baseName,
+        onClick: () => select(position),
+      }, item.objectUrl
+        ? h('img', { src: item.objectUrl, alt: item.baseName })
+        : h('span', { class: 'thumb__name' }, item.baseName)));
+    });
+    syncStrip();
+  }
 
   // --- controls ----------------------------------------------------------
 
@@ -252,7 +422,7 @@ export function createResizer(carried = null) {
     widthInput.value = String(preset.w);
     heightInput.value = String(preset.h);
     syncCanvasBox();
-    frame('contain');
+    frameAll('contain');
   }
 
   const widthInput = h('input', { class: 'input', type: 'number', min: '1', value: String(size.w), 'aria-label': t('Width') });
@@ -267,7 +437,7 @@ export function createResizer(carried = null) {
       if (!(w >= 1 && hgt >= 1)) return;
       size = { w, h: hgt };
       syncCanvasBox();
-      frame('contain');
+      frameAll('contain');
     },
   }, t('Apply size'));
 
@@ -288,7 +458,7 @@ export function createResizer(carried = null) {
       nameInput.value = '';
       renderPresets();
       syncCanvasBox();
-      frame('contain');
+      frameAll('contain');
       toast(t('Preset saved.'));
     },
   }, t('Save as preset'));
@@ -350,43 +520,151 @@ export function createResizer(carried = null) {
     colourButton.setAttribute('aria-pressed', String(!transparent));
   }
 
+  // --- export ------------------------------------------------------------
+
+  function outputName(item, taken) {
+    const base = `${safeName(item.baseName, 'image')}-${size.w}x${size.h}`;
+    let name = `${base}.${OUTPUT_EXT}`;
+    let n = 2;
+    while (taken.has(name)) {
+      name = `${base}_${n}.${OUTPUT_EXT}`;
+      n += 1;
+    }
+    taken.add(name);
+    return name;
+  }
+
+  /**
+   * One image downloads on its own, as it always has. A batch is encoded one
+   * at a time - the canvas work is on the main thread either way - and leaves
+   * as a single ZIP, because browsers throttle long runs of downloads.
+   */
+  async function exportItems() {
+    if (exporting || !items.length) return;
+
+    if (items.length === 1) {
+      const blob = await encodeCanvas(canvas);
+      saveBlob(blob, outputName(items[0], new Set()));
+      return;
+    }
+
+    exporting = true;
+    setExportBusy(true);
+    status.el.hidden = false;
+    status.set({
+      phase: 'processing',
+      title: `${t('Preparing')} ${plural(items.length, 'image', 'images')}`,
+      summary: '',
+      progress: 0,
+    });
+
+    const out = h('canvas', { width: size.w, height: size.h });
+    const ctx = out.getContext('2d');
+    const zip = new StoreZip();
+    const taken = new Set();
+    const failures = [];
+
+    try {
+      if (!ctx) throw new Error(t('Canvas 2D context is unavailable'));
+
+      for (const [position, item] of items.entries()) {
+        status.set({
+          title: `${t('Preparing')} ${position + 1}/${items.length}: ${item.baseName}`,
+          progress: Math.round((position / items.length) * 80),
+        });
+        try {
+          paint(ctx, item, size);
+          await zip.addBlob(outputName(item, taken), await encodeCanvas(out));
+        } catch (error) {
+          failures.push(`${item.baseName}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      if (!zip.size) {
+        status.set({
+          phase: 'error',
+          title: t('No output generated'),
+          summary: failures[0] ?? '',
+          progress: 0,
+        });
+        return;
+      }
+
+      status.set({ title: t('Building ZIP archive'), progress: 90 });
+      saveBlob(zip.build(), `resized-${size.w}x${size.h}.zip`);
+      status.set({
+        phase: 'success',
+        title: t('Processing complete'),
+        summary: `${plural(zip.size, 'file', 'files')} ${t('prepared')}${failures.length ? `; ${failures.length} ${t('skipped')}` : ''}.`,
+        progress: 100,
+      });
+      if (failures.length) errorLine.textContent = failures.join(' · ');
+    } catch (error) {
+      status.set({
+        phase: 'error',
+        title: t('Processing failed'),
+        summary: error instanceof Error ? error.message : String(error),
+        progress: null,
+      });
+    } finally {
+      out.width = 1;
+      out.height = 1;
+      exporting = false;
+      setExportBusy(false);
+    }
+  }
+
+  const downloadLabel = h('span', null, t('Download result'));
   const downloadButton = h('button', {
     type: 'button', class: 'btn',
-    onClick: async () => {
-      if (!image) return;
-      const blob = await encodeCanvas(canvas);
-      saveBlob(blob, `${safeName(baseName, 'image')}-${size.w}x${size.h}.${OUTPUT_EXT}`);
-    },
-  }, icon('download', 14), t('Download result'));
+    onClick: () => { exportItems(); },
+  }, icon('download', 14), downloadLabel);
 
   const startOverButton = h('button', {
     type: 'button', class: 'btn btn--ghost',
     onClick: () => {
-      image = null;
+      if (exporting) return;
+      loadToken += 1;
+      releaseItems();
+      items = [];
+      index = 0;
       errorLine.textContent = '';
-      if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+      status.reset();
+      status.el.hidden = true;
+      renderStrip();
       updateLoadedState();
       render();
     },
   }, t('Start over'));
 
+  const fitButton = h('button', { type: 'button', onClick: () => frameAll('contain') }, t('Fit'));
+  const fillButton = h('button', { type: 'button', onClick: () => frameAll('cover') }, t('Fill'));
+
+  function setExportBusy(busy) {
+    downloadButton.disabled = busy;
+    startOverButton.disabled = busy;
+    fitButton.disabled = busy;
+    fillButton.disabled = busy;
+    scaleInput.disabled = busy;
+    dropzone.setBusy(busy);
+  }
+
   const dropzone = createDropzone({
     iconName: 'image',
-    title: t('Choose or drop an image'),
-    hint: t('Drag an image in, browse for it, or paste with Ctrl+V.'),
-    buttonLabel: t('Select image'),
+    title: t('Choose or drop images'),
+    hint: t('Drag images in, browse for them, or paste with Ctrl+V. Originals on your disk are never modified.'),
+    buttonLabel: t('Select images'),
     accept: 'image/*',
-    multiple: false,
-    onFiles: (files) => loadFile(files[0]),
+    multiple: true,
+    onFiles: (files) => loadFiles(files),
   });
 
   const editor = h('div', { class: 'stack' },
     canvasWrap,
     h('div', { class: 'row row--between' },
-      h('div', { class: 'segmented', role: 'group', 'aria-label': t('Placement') },
-        h('button', { type: 'button', onClick: () => frame('contain') }, t('Fit')),
-        h('button', { type: 'button', onClick: () => frame('cover') }, t('Fill'))),
+      h('div', { class: 'segmented', role: 'group', 'aria-label': t('Placement') }, fitButton, fillButton),
       h('div', { class: 'row' }, startOverButton, downloadButton)),
+    h('div', { class: 'field' }, stripRow, strip),
     h('div', { class: 'field' },
       h('div', { class: 'row row--between' },
         h('span', { class: 'field__label' }, t('Scale')), scaleLabel),
@@ -400,12 +678,19 @@ export function createResizer(carried = null) {
   );
 
   function updateLoadedState() {
-    dropzone.el.hidden = Boolean(image);
-    editor.hidden = !image;
+    const loaded = items.length > 0;
+    const batch = items.length > 1;
+    dropzone.el.hidden = loaded;
+    editor.hidden = !loaded;
+    // A single image keeps the panel it has always had: no strip, and a
+    // download button that names the one file it produces.
+    strip.hidden = !batch;
+    stripRow.hidden = !batch;
+    downloadLabel.textContent = batch ? t('Download all') : t('Download result');
   }
 
   const root = h('div', { class: 'stack' },
-    pageHead('resize', t('Smart Resizer'), t('Place an image precisely inside a fixed output canvas.')),
+    pageHead('resize', t('Smart Resizer'), t('Place images precisely inside a fixed output canvas.')),
 
     h('section', { class: 'panel' },
       h('div', { class: 'panel__head' },
@@ -428,20 +713,22 @@ export function createResizer(carried = null) {
         saveButton, deleteButton)),
 
     h('section', { class: 'panel' }, dropzone.el, editor),
+    status.el,
   );
 
   document.addEventListener('paste', onPaste);
 
   renderPresets();
-  // selectPreset re-frames the image, which would discard a carried scale and
-  // position, so those are restored after it rather than before.
+  // selectPreset re-frames every image, which would discard carried scales and
+  // positions, so those are restored after it rather than before.
+  const restore = items.map((item) => ({ scale: item.scale, position: { ...item.position } }));
   selectPreset(presetId);
-  if (image) {
-    scale = carried.scale;
-    position = { ...carried.position };
-    scaleInput.value = String(Math.round(scale * 100));
-    scaleLabel.textContent = `${Math.round(scale * 100)}%`;
-  }
+  items.forEach((item, position) => {
+    item.scale = restore[position].scale;
+    item.position = { ...restore[position].position };
+  });
+  syncScaleControls();
+  renderStrip();
   syncCanvasBox();
   updateLoadedState();
 
@@ -449,11 +736,23 @@ export function createResizer(carried = null) {
     el: root,
     getState() {
       handedOver = true;
-      return { image, baseName, scale, position, objectUrl };
+      const item = current();
+      return {
+        items,
+        index,
+        // The single-image fields 3.x wrote, so an older build reading this
+        // stash still finds the image that is on screen.
+        image: item?.image ?? null,
+        baseName: item?.baseName ?? 'image',
+        scale: item?.scale ?? 1,
+        position: item ? { ...item.position } : { x: 0, y: 0 },
+        objectUrl: item?.objectUrl ?? null,
+      };
     },
     destroy() {
+      loadToken += 1;
       document.removeEventListener('paste', onPaste);
-      if (objectUrl && !handedOver) URL.revokeObjectURL(objectUrl);
+      if (!handedOver) releaseItems();
     },
   };
 }

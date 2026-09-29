@@ -446,6 +446,21 @@ input[type="color"] {
 .guide--v { inset-block: 0; inset-inline-start: 50%; width: 1px; }
 .guide--h { inset-inline: 0; top: 50%; height: 1px; }
 
+/* Loaded-image strip, shown only when a run holds more than one image. */
+.thumbs {
+  display: flex; gap: 8px; overflow-x: auto;
+  padding-block: 6px; scrollbar-width: thin;
+}
+.thumb {
+  flex: 0 0 auto; width: 64px; height: 64px; padding: 2px;
+  display: grid; place-items: center; overflow: hidden; cursor: pointer;
+  border: 1px solid var(--bg-border); border-radius: var(--radius);
+  background: var(--bg-base); color: var(--text-muted);
+}
+.thumb img { width: 100%; height: 100%; object-fit: contain; }
+.thumb__name { font-size: 0.65rem; padding: 2px; overflow: hidden; }
+.thumb[data-current="true"] { border-color: var(--accent-main); outline: 1px solid var(--accent-main); }
+
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .row--between { justify-content: space-between; }
 .muted { color: var(--text-muted); font-size: 0.75rem; }
