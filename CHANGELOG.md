@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.8.0 - 2026-09-29
+
+**Choose what an adjustment touches**
+
+The Smart Resizer's new Adjustments switch decides whether Fit, Fill, the scale slider and dragging move every loaded image together or only the one on screen, so a batch can be placed as a set or image by image. The choice is remembered.
+
 ## 3.7.0 - 2026-09-29
 
 **Smart Resizer takes a batch**

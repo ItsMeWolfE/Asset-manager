@@ -1,8 +1,8 @@
 {
-  "version": "3.7.0",
+  "version": "3.8.0",
   "build": "dev",
   "built": "dev",
   "released": "2026-09-29",
-  "title": "Smart Resizer takes a batch",
-  "notes": "The Smart Resizer now loads as many images as you give it. They share the canvas size and background, each keeps its own scale and position, every one is fitted as it loads, and the run downloads as a single ZIP. One image behaves exactly as before."
+  "title": "Choose what an adjustment touches",
+  "notes": "The Smart Resizer's new Adjustments switch decides whether Fit, Fill, the scale slider and dragging move every loaded image together or only the one on screen, so a batch can be placed as a set or image by image. The choice is remembered."
 }
