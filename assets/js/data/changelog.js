@@ -1,5 +1,6 @@
 // Release history, newest first. Preserved from 2.4.1 with 3.0.0 prepended.
 export const CHANGELOG = [
+{version:"v3.8.1",title:"The resizer says it is loading",description:"Choosing several large images left the Smart Resizer blank while they decoded. It now shows a progress panel counting the images as they arrive."},
 {version:"v3.8.0",title:"Choose what an adjustment touches",description:"The Smart Resizer's new Adjustments switch decides whether Fit, Fill, the scale slider and dragging move every loaded image together or only the one on screen, so a batch can be placed as a set or image by image. The choice is remembered."},
 {version:"v3.7.0",title:"Smart Resizer takes a batch",description:"The Smart Resizer now loads as many images as you give it. They share the canvas size and background, each keeps its own scale and position, every one is fitted as it loads, and the run downloads as a single ZIP. One image behaves exactly as before."},
 {version:"v3.6.1",title:"EOL reads as out of stock",description:"A stock column that marks a discontinued line EOL was counted as unreadable and skipped. EOL now joins the out-of-stock wordings, so those rows are written out as 9 the way אזל במלאי and לא זמין already were."},

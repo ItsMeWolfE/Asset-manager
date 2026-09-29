@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.8.1 - 2026-09-29
+
+**The resizer says it is loading**
+
+Choosing several large images left the Smart Resizer blank while they decoded. It now shows a progress panel counting the images as they arrive.
+
 ## 3.8.0 - 2026-09-29
 
 **Choose what an adjustment touches**
