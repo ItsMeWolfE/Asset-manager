@@ -15,7 +15,7 @@ closing the tab throws all of it away.
 
 | Tool | What it does |
 | --- | --- |
-| **Batch Cropper** | Strips the empty margin off product photos, in bulk. Optionally cuts the product out of its background too. |
+| **Image Optimiser** | Converts product photos to WebP or PNG in bulk, trimming the empty margin off them unless cropping is turned off. Optionally cuts the product out of its background too. |
 | **Smart Resizer** | Places one image, exactly where you want it, inside a fixed canvas size. |
 | **HTML Cleaner** | Turns a supplier's messy description HTML into something safe to paste into the site. |
 | **Dragon Fixer** | Turns a Dragon stock export into the two-column file the import expects. |

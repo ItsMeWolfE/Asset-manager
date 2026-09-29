@@ -14,7 +14,7 @@ import { createPrice } from './tools/price.js';
 import { createAbout } from './tools/about.js';
 
 const TOOLS = [
-  { id: 'cropper', label: 'Batch Cropper', description: 'Remove empty borders from product images and export WebP files.', icon: 'crop', create: createCropper },
+  { id: 'cropper', label: 'Image Optimiser', description: 'Convert product images to WebP or PNG, with optional border cropping.', icon: 'crop', create: createCropper },
   { id: 'resizer', label: 'Smart Resizer', description: 'Place images precisely inside a fixed output canvas.', icon: 'resize', create: createResizer },
   { id: 'transformer', label: 'HTML Cleaner', description: 'Clean and normalize product-description HTML safely.', icon: 'fileText', create: createCleaner },
   { id: 'dragon', label: 'Dragon Fixer', description: 'Normalize Dragon inventory spreadsheets for import.', icon: 'table', create: createDragon },

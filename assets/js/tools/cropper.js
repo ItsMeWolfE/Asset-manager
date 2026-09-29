@@ -1,10 +1,11 @@
-// Batch Cropper - trims the empty border off product photos, in bulk.
+// Image Optimiser - converts product photos to WebP or PNG, in bulk, trimming
+// the empty border off them on the way through unless cropping is turned off.
 
 import { h, icon } from '../core/dom.js';
 import { t, plural } from '../core/i18n.js';
 import { loadStored, saveStored } from '../core/prefs.js';
 import { createStatus, createLog, createDropzone, pageHead } from '../core/ui.js';
-import { cropImage, uniqueName, mapLimit, OUTPUT_EXT } from '../core/image.js';
+import { processImage, uniqueName, mapLimit, FORMATS, isFormatSupported } from '../core/image.js';
 import { isSegmentationSupported, warmUpSegmentation } from '../core/segment.js';
 import { StoreZip, saveBlob } from '../core/files.js';
 
@@ -12,10 +13,14 @@ const SHAPE_KEY = 'asset-manager-crop-shape-v1';
 const LEGACY_SHAPE_KEY = 'bam-crop-shape-v1';
 const BACKGROUND_KEY = 'asset-manager-crop-background-v1';
 const MODE_KEY = 'asset-manager-crop-mode-v1';
+const CROP_KEY = 'asset-manager-crop-enabled-v1';
+const FORMAT_KEY = 'asset-manager-output-format-v1';
 const isShape = (v) => v === 'square' || v === 'full';
 const isBackground = (v) => v === 'keep' || v === 'remove';
 const isMode = (v) => v === 'zip' || v === 'single';
-const ZIP_NAME = 'tight_cropped.zip';
+const isCrop = (v) => v === 'on' || v === 'off';
+const isFormat = (v) => v === 'webp' || v === 'png';
+const zipName = (cropping) => (cropping ? 'tight_cropped.zip' : 'converted_images.zip');
 
 // ZIP mode can afford two decoders in flight. Individual downloads are kept
 // sequential because browsers throttle rapid successive downloads.
@@ -25,6 +30,11 @@ export function createCropper() {
   let phase = 'idle';
   let outputMode = loadStored(MODE_KEY, isMode, 'zip');
   let shape = loadStored(SHAPE_KEY, isShape, loadStored(LEGACY_SHAPE_KEY, isShape, 'full'));
+  let cropping = loadStored(CROP_KEY, isCrop, 'on');
+  // Same override as the background model below: a browser with no WebP canvas
+  // encoder cannot honour the stored preference, so it is not pretended it can.
+  const canWebp = isFormatSupported('webp');
+  let format = canWebp ? loadStored(FORMAT_KEY, isFormat, 'webp') : 'png';
   // A browser without module workers or OffscreenCanvas cannot run the model at
   // all, so the stored preference is overridden rather than left to fail later.
   const canCutOut = isSegmentationSupported();
@@ -35,11 +45,15 @@ export function createCropper() {
   const log = createLog();
 
   const modeButtons = new Map();
+  const formatButtons = new Map();
+  const cropButtons = new Map();
   const shapeButtons = new Map();
   const backgroundButtons = new Map();
 
   const GROUPS = {
     mode: { current: () => outputMode, buttons: modeButtons },
+    format: { current: () => format, buttons: formatButtons },
+    crop: { current: () => cropping, buttons: cropButtons },
     shape: { current: () => shape, buttons: shapeButtons },
     background: { current: () => background, buttons: backgroundButtons },
   };
@@ -55,23 +69,36 @@ export function createCropper() {
     return button;
   }
 
+  let busy = false;
+
+  /**
+   * The single place that decides which controls are live, so a run finishing
+   * cannot re-enable something the browser or the current settings rule out.
+   */
   function syncButtons() {
     for (const { current, buttons } of Object.values(GROUPS)) {
       for (const [value, button] of buttons) {
         button.setAttribute('aria-pressed', String(current() === value));
+        button.disabled = busy;
       }
     }
-  }
 
-  function setBusy(busy) {
-    for (const { buttons } of Object.values(GROUPS)) {
-      for (const button of buttons.values()) button.disabled = busy;
+    // Crop mode only means anything while cropping is on.
+    for (const button of shapeButtons.values()) {
+      button.disabled = busy || cropping === 'off';
     }
-    // Stays disabled either way where the browser cannot run the model.
+
     const remove = backgroundButtons.get('remove');
     if (remove && !canCutOut) remove.disabled = true;
-    dropzone.setBusy(busy);
-    clearButton.disabled = busy;
+    const webp = formatButtons.get('webp');
+    if (webp && !canWebp) webp.disabled = true;
+  }
+
+  function setBusy(value) {
+    busy = value;
+    syncButtons();
+    dropzone.setBusy(value);
+    clearButton.disabled = value;
   }
 
   const dropzone = createDropzone({
@@ -110,7 +137,12 @@ export function createCropper() {
       summary: t('The upload area stays available after this run completes.'),
       progress: 0,
     });
-    log.add(`${t('Started crop run with')} ${plural(images.length, 'image', 'images')}.`);
+
+    // Every setting is read once here, so changing a control mid-run cannot
+    // leave half the batch cropped and the other half not.
+    const crop = cropping === 'on';
+    const { mime, ext } = FORMATS[format];
+    log.add(`${t('Started a run with')} ${plural(images.length, 'image', 'images')}, ${t('output')} ${ext.toUpperCase()}${crop ? `, ${t('cropping on')}` : `, ${t('cropping off')}`}.`);
 
     const zip = new StoreZip();
     const taken = new Set();
@@ -137,17 +169,23 @@ export function createCropper() {
       await mapLimit(images, concurrency, async (file, index) => {
         if (runToken !== token) return;
 
+        const verb = cutOut ? t('Removing background') : (crop ? t('Cropping') : t('Converting'));
         status.set({
-          title: `${cutOut ? t('Removing background') : t('Cropping')} ${index + 1}/${images.length}: ${file.name}`,
+          title: `${verb} ${index + 1}/${images.length}: ${file.name}`,
         });
 
         try {
-          const blob = await cropImage(file, shape === 'square', cutOut);
+          const blob = await processImage(file, {
+            crop,
+            square: crop && shape === 'square',
+            removeBackground: cutOut,
+            mime,
+          });
           if (!blob) {
             skipped += 1;
             log.error(`${t('Skipped empty image')}: ${file.name}`);
           } else {
-            const name = uniqueName(file.name, taken);
+            const name = uniqueName(file.name, taken, ext);
             if (outputMode === 'single') {
               saveBlob(blob, name);
               log.add(`${t('Download started')}: ${name}`);
@@ -173,7 +211,7 @@ export function createCropper() {
         status.set({
           phase: 'error',
           title: t('No output generated'),
-          summary: t('Every image was empty or failed to process. See the event log below.'),
+          summary: t('Every image failed to process, or was empty and cropped away to nothing. See the event log below.'),
           progress: 0,
         });
         return;
@@ -181,8 +219,9 @@ export function createCropper() {
 
       if (outputMode === 'zip') {
         status.set({ title: t('Building ZIP archive'), progress: 90 });
-        // Store-only: WebP is already compressed, so deflating it just costs time.
-        saveBlob(zip.build(), ZIP_NAME);
+        // Store-only: both output formats are already compressed, so deflating
+        // them again just costs time.
+        saveBlob(zip.build(), zipName(crop));
         log.success(t('ZIP download started.'));
       } else {
         log.success(t('All individual downloads were started.'));
@@ -228,14 +267,31 @@ export function createCropper() {
   }
 
   const root = h('div', { class: 'stack' },
-    pageHead('crop', t('Batch Cropper'), t('Remove empty borders from product images and export WebP files.')),
+    pageHead('crop', t('Image Optimiser'), t('Convert product images to WebP or PNG, trimming the empty border off them unless you turn cropping off.')),
 
     h('section', { class: 'panel' },
       h('div', { class: 'panel__head' },
         h('div', null,
-          h('h2', { class: 'panel__title' }, t('Output format')),
-          h('p', { class: 'panel__hint' },
-            `${t('Output is')} ${OUTPUT_EXT.toUpperCase()} ${t('with transparency preserved; only the download packaging differs.')}`)),
+          h('h2', { class: 'panel__title' }, t('File format')),
+          h('p', { class: 'panel__hint' }, canWebp
+            ? t('Both are lossless and keep transparency. WebP files are much smaller, so use it unless something downstream cannot read WebP.')
+            : t('This browser has no WebP encoder, so everything comes out as PNG.'))),
+        h('div', { class: 'segmented', role: 'group', 'aria-label': t('File format') },
+          segButton('format', 'webp', 'Product images (WebP)', 'image', (value) => { format = value; saveStored(FORMAT_KEY, value); syncButtons(); }),
+          segButton('format', 'png', 'Page images (PNG)', 'fileText', (value) => { format = value; saveStored(FORMAT_KEY, value); syncButtons(); }))),
+
+      h('div', { class: 'panel__head' },
+        h('div', null,
+          h('h2', { class: 'panel__title' }, t('Crop')),
+          h('p', { class: 'panel__hint' }, t('With cropping off the pixels are left exactly as they are and only the file format changes.'))),
+        h('div', { class: 'segmented', role: 'group', 'aria-label': t('Crop') },
+          segButton('crop', 'on', 'On', 'crop', (value) => { cropping = value; saveStored(CROP_KEY, value); syncButtons(); }),
+          segButton('crop', 'off', 'Off', 'image', (value) => { cropping = value; saveStored(CROP_KEY, value); syncButtons(); }))),
+
+      h('div', { class: 'panel__head' },
+        h('div', null,
+          h('h2', { class: 'panel__title' }, t('Download mode')),
+          h('p', { class: 'panel__hint' }, t('Only the download packaging differs; the files themselves are identical either way.'))),
         h('div', { class: 'segmented', role: 'group', 'aria-label': t('Download mode') },
           segButton('mode', 'zip', 'ZIP archive', 'archive', (value) => { outputMode = value; saveStored(MODE_KEY, value); syncButtons(); }),
           segButton('mode', 'single', 'Individual files', 'download', (value) => { outputMode = value; saveStored(MODE_KEY, value); syncButtons(); }))),
@@ -266,10 +322,9 @@ export function createCropper() {
     log.el,
   );
 
-  if (!canCutOut) {
-    const remove = backgroundButtons.get('remove');
-    if (remove) remove.disabled = true;
-  }
+  // Applies the browser-capability overrides and the crop-mode dependency to the
+  // buttons that were just built.
+  syncButtons();
 
   // Bound to the document, not to `root`: a paste with nothing focused targets
   // <body>, which never bubbles through the tool container.

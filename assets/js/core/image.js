@@ -38,6 +38,18 @@ export const WEBP_OK = (() => {
 export const OUTPUT_MIME = WEBP_OK ? 'image/webp' : 'image/png';
 export const OUTPUT_EXT = WEBP_OK ? 'webp' : 'png';
 
+/**
+ * The formats a run can be asked for. WebP is lossless here, so choosing it is
+ * a straight size win over PNG rather than a quality trade.
+ */
+export const FORMATS = {
+  webp: { mime: 'image/webp', ext: 'webp' },
+  png: { mime: 'image/png', ext: 'png' },
+};
+
+/** WebP needs a canvas encoder; PNG is always there. */
+export const isFormatSupported = (format) => format === 'png' || WEBP_OK;
+
 // ---------------------------------------------------------------------------
 // Crop worker client
 // ---------------------------------------------------------------------------
@@ -120,12 +132,12 @@ export async function decodeImage(file) {
   }
 }
 
-/** Encode a canvas, preferring lossless WebP. */
-export function encodeCanvas(canvas) {
+/** Encode a canvas losslessly, defaulting to WebP where the browser has it. */
+export function encodeCanvas(canvas, mime = OUTPUT_MIME) {
   return new Promise((resolve, reject) => {
     const fallback = () => {
       try {
-        const url = canvas.toDataURL(OUTPUT_MIME, 1);
+        const url = canvas.toDataURL(mime, 1);
         const [meta, data] = url.split(',');
         const binary = atob(data);
         const bytes = new Uint8Array(binary.length);
@@ -139,7 +151,7 @@ export function encodeCanvas(canvas) {
     if (typeof canvas.toBlob !== 'function') { fallback(); return; }
 
     try {
-      canvas.toBlob((blob) => (blob ? resolve(blob) : fallback()), OUTPUT_MIME, 1);
+      canvas.toBlob((blob) => (blob ? resolve(blob) : fallback()), mime, 1);
     } catch {
       fallback();
     }
@@ -180,11 +192,16 @@ function edgeColour(data, w, h) {
 }
 
 /**
- * Crop one image to its content.
+ * Re-encode one image, optionally cropping it to its content first.
  *
- * Returns a Blob, or null when the image is entirely background.
- * In square mode the crop is expanded to a centred 1:1 box and any area beyond
- * the source is filled with the detected border colour.
+ * Returns a Blob, or null when cropping was asked for and the image turns out
+ * to be entirely background.
+ *
+ * With `crop` the content bounds are detected and everything outside them is
+ * dropped; in `square` mode the crop is expanded to a centred 1:1 box and any
+ * area beyond the source is filled with the detected border colour. With
+ * `crop` off the pixels are passed through untouched and only the file format
+ * changes, which is what makes this a compressor.
  *
  * With `removeBackground` the subject is cut out first and everything else is
  * made transparent. Bounds detection then runs over the cutout, so the crop
@@ -192,7 +209,8 @@ function edgeColour(data, w, h) {
  * and in square mode the fill colour comes out transparent, because by then
  * the border genuinely is.
  */
-export async function cropImage(file, square, removeBackground = false) {
+export async function processImage(file, options = {}) {
+  const { crop = true, square = false, removeBackground = false, mime = OUTPUT_MIME } = options;
   const { source, cleanup } = await decodeImage(file);
   let scratch = null;
 
@@ -201,21 +219,29 @@ export async function cropImage(file, square, removeBackground = false) {
     const height = 'naturalHeight' in source ? source.naturalHeight : source.height;
     if (!width || !height) throw new Error('Invalid image dimensions');
 
-    scratch = document.createElement('canvas');
-    scratch.width = width;
-    scratch.height = height;
-
-    const scratchCtx = scratch.getContext('2d', { willReadFrequently: true });
-    if (!scratchCtx) throw new Error('Canvas 2D context is unavailable');
-
-    scratchCtx.clearRect(0, 0, width, height);
-    scratchCtx.drawImage(source, 0, 0);
-
-    const imageData = scratchCtx.getImageData(0, 0, width, height);
-
-    // Whatever the final crop is drawn from. Background removal replaces it
-    // with the masked canvas, since the original still has its backdrop.
+    // Whatever the output is drawn from. Background removal replaces it with the
+    // masked canvas, since the original still has its backdrop.
     let drawSource = source;
+
+    // Neither pass needs the pixels back out of the GPU when the image is only
+    // being re-encoded, so the readback is skipped entirely in that case.
+    const needsPixels = crop || removeBackground;
+    let scratchCtx = null;
+    let imageData = null;
+
+    if (needsPixels) {
+      scratch = document.createElement('canvas');
+      scratch.width = width;
+      scratch.height = height;
+
+      scratchCtx = scratch.getContext('2d', { willReadFrequently: true });
+      if (!scratchCtx) throw new Error('Canvas 2D context is unavailable');
+
+      scratchCtx.clearRect(0, 0, width, height);
+      scratchCtx.drawImage(source, 0, 0);
+
+      imageData = scratchCtx.getImageData(0, 0, width, height);
+    }
 
     if (removeBackground) {
       // segmentAlpha() transfers the buffer it is handed, so it gets a copy and
@@ -234,25 +260,31 @@ export async function cropImage(file, square, removeBackground = false) {
       drawSource = scratch;
     }
 
-    const background = square ? edgeColour(imageData.data, width, height) : null;
+    const background = crop && square ? edgeColour(imageData.data, width, height) : null;
 
-    // analyse() transfers the pixel buffer, so read anything needed from it first.
-    const bounds = await analyse(imageData);
+    let cropW = width;
+    let cropH = height;
+    let sx = 0;
+    let sy = 0;
 
-    if (!bounds) return null;
+    if (crop) {
+      // analyse() transfers the pixel buffer, so read anything needed from it first.
+      const bounds = await analyse(imageData);
+      if (!bounds) return null;
 
-    let cropW = bounds.maxX - bounds.minX + 1;
-    let cropH = bounds.maxY - bounds.minY + 1;
-    let sx = bounds.minX;
-    let sy = bounds.minY;
-    if (cropW <= 0 || cropH <= 0) throw new Error('Invalid crop bounds');
+      cropW = bounds.maxX - bounds.minX + 1;
+      cropH = bounds.maxY - bounds.minY + 1;
+      sx = bounds.minX;
+      sy = bounds.minY;
+      if (cropW <= 0 || cropH <= 0) throw new Error('Invalid crop bounds');
 
-    if (square) {
-      const side = Math.max(cropW, cropH);
-      sx = Math.round(bounds.minX + cropW / 2 - side / 2);
-      sy = Math.round(bounds.minY + cropH / 2 - side / 2);
-      cropW = side;
-      cropH = side;
+      if (square) {
+        const side = Math.max(cropW, cropH);
+        sx = Math.round(bounds.minX + cropW / 2 - side / 2);
+        sy = Math.round(bounds.minY + cropH / 2 - side / 2);
+        cropW = side;
+        cropH = side;
+      }
     }
 
     const out = document.createElement('canvas');
@@ -278,13 +310,13 @@ export async function cropImage(file, square, removeBackground = false) {
       ctx.drawImage(drawSource, x0, y0, x1 - x0, y1 - y0, x0 - sx, y0 - sy, x1 - x0, y1 - y0);
     }
 
-    const blob = await encodeCanvas(out);
+    const blob = await encodeCanvas(out, mime);
     out.width = 1;
     out.height = 1;
     return blob;
   } finally {
     // Kept alive until here: with background removal the scratch canvas is the
-    // thing the crop is drawn from, so it cannot be released any earlier.
+    // thing the output is drawn from, so it cannot be released any earlier.
     if (scratch) {
       scratch.width = 1;
       scratch.height = 1;
@@ -294,14 +326,14 @@ export async function cropImage(file, square, removeBackground = false) {
 }
 
 /** Give each output a unique name, appending _2, _3 … on collision. */
-export function uniqueName(sourceName, taken) {
+export function uniqueName(sourceName, taken, ext = OUTPUT_EXT) {
   const base = sourceName.replace(/\.[^/.]+$/, '') || 'image';
-  let name = `${base}.${OUTPUT_EXT}`;
+  let name = `${base}.${ext}`;
   if (!taken) return name;
 
   let n = 2;
   while (taken.has(name)) {
-    name = `${base}_${n}.${OUTPUT_EXT}`;
+    name = `${base}_${n}.${ext}`;
     n += 1;
   }
   taken.add(name);
