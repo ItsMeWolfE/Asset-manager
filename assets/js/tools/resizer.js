@@ -266,11 +266,36 @@ export function createResizer(carried = null) {
     const token = ++loadToken;
     dropzone.setBusy(true);
 
+    // Large photos take a noticeable while to decode, and until they do there
+    // is nothing on screen, so the count is shown as they arrive.
+    let ready = 0;
+    status.el.hidden = false;
+    status.set({
+      phase: 'processing',
+      title: `${t('Loading')} ${plural(files.length, 'image', 'images')}`,
+      summary: '',
+      progress: 0,
+    });
+
     let decoded;
     try {
-      decoded = await Promise.all(files.map(decodeFile));
+      decoded = await Promise.all(files.map(async (file) => {
+        const item = await decodeFile(file);
+        ready += 1;
+        if (loadToken === token) {
+          status.set({
+            title: `${t('Loading')} ${ready}/${files.length}`,
+            progress: Math.round((ready / files.length) * 100),
+          });
+        }
+        return item;
+      }));
     } finally {
-      if (loadToken === token) dropzone.setBusy(false);
+      if (loadToken === token) {
+        dropzone.setBusy(false);
+        status.reset();
+        status.el.hidden = true;
+      }
     }
 
     // Start over, or another selection, landed while this one was decoding.

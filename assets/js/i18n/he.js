@@ -120,6 +120,7 @@ export const he = {
     "Latest build": "בנייה אחרונה",
     "Light": "בהיר",
     "Loaded images": "תמונות שנטענו",
+    "Loading": "טוען",
     "Loading the background model": "טוען את מודל הרקע",
     "Mark every row": "סימון כל השורות",
     "Midnight": "חצות",
