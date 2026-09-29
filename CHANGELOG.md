@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.7.0 - 2026-09-29
+
+**Smart Resizer takes a batch**
+
+The Smart Resizer now loads as many images as you give it. They share the canvas size and background, each keeps its own scale and position, every one is fitted as it loads, and the run downloads as a single ZIP. One image behaves exactly as before.
+
 ## 3.6.1 - 2026-09-22
 
 **EOL reads as out of stock**
