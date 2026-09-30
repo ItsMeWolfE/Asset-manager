@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.0.2 - 2026-09-30
+
+**Readable text on any accent colour**
+
+The accent colour picker in the settings stays open while you drag across it, instead of closing on the first colour it picks. Text on the accent colour - buttons, the chosen side of each switch, the logo - now turns black when the colour is too light for white to be read on it, and turns back to white when it is dark enough again.
+
 ## 4.0.1 - 2026-09-30
 
 **Save your own defaults**

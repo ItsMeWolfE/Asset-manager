@@ -1,8 +1,8 @@
 {
-  "version": "4.0.1",
+  "version": "4.0.2",
   "build": "dev",
   "built": "dev",
   "released": "2026-09-30",
-  "title": "Save your own defaults",
-  "notes": "The Images tool now opens on Optimise, WebP, one ZIP, a tight trim and the background kept. Its switches no longer save themselves when clicked: Save as default, at the top of the tool, makes whatever is on screen what it opens with in this browser, and Reset default goes back to the original."
+  "title": "Readable text on any accent colour",
+  "notes": "The accent colour picker in the settings stays open while you drag across it, instead of closing on the first colour it picks. Text on the accent colour - buttons, the chosen side of each switch, the logo - now turns black when the colour is too light for white to be read on it, and turns back to white when it is dark enough again."
 }
