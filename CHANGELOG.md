@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.0.1 - 2026-09-30
+
+**Save your own defaults**
+
+The Images tool now opens on Optimise, WebP, one ZIP, a tight trim and the background kept. Its switches no longer save themselves when clicked: Save as default, at the top of the tool, makes whatever is on screen what it opens with in this browser, and Reset default goes back to the original.
+
 ## 4.0.0 - 2026-09-29
 
 **Six tools became four**

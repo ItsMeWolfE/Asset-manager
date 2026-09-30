@@ -1,8 +1,8 @@
 {
-  "version": "4.0.0",
+  "version": "4.0.1",
   "build": "dev",
   "built": "dev",
-  "released": "2026-09-29",
-  "title": "Six tools became four",
-  "notes": "The Image Optimiser and the Smart Resizer are now one tool called Images, with a switch at the top choosing between Optimise and Place. They share the file format, the download packaging, the dropzone and the paste handler, and Place finally writes WebP at quality 92 instead of losslessly, so a placed photo is no longer larger than the JPEG it came from. The XLSX Fixer and the Dragon Fixer are now Spreadsheets, with Dragon as a third option on the Output switch that already read Prices and Stock. Cropping on or off plus the separate full or square choice became one Trim control reading Off, Tight or Square, so there is no longer a switch on screen doing nothing. Nothing was taken away, every setting carries over, and old bookmarks still land on the tool that absorbed them."
+  "released": "2026-09-30",
+  "title": "Save your own defaults",
+  "notes": "The Images tool now opens on Optimise, WebP, one ZIP, a tight trim and the background kept. Its switches no longer save themselves when clicked: Save as default, at the top of the tool, makes whatever is on screen what it opens with in this browser, and Reset default goes back to the original."
 }
