@@ -23,23 +23,8 @@ import { isSegmentationSupported, warmUpSegmentation } from '../core/segment.js'
 import { StoreZip, saveBlob, safeName } from '../core/files.js';
 
 // ---------------------------------------------------------------------------
-// Stored preferences
+// Defaults
 // ---------------------------------------------------------------------------
-
-const MODE_KEY = 'asset-manager-images-mode-v1';
-const FORMAT_KEY = 'asset-manager-output-format-v1';
-const PACKAGING_KEY = 'asset-manager-crop-mode-v1';
-const TRIM_KEY = 'asset-manager-trim-v1';
-const BACKGROUND_KEY = 'asset-manager-crop-background-v1';
-const PRESET_KEY = 'asset-manager-resizer-presets-v1';
-const SELECTED_KEY = 'asset-manager-resizer-preset-v1';
-const CANVAS_BG_KEY = 'asset-manager-resizer-background-v1';
-const APPLY_KEY = 'asset-manager-resizer-apply-v1';
-
-// What 3.x wrote, still read once so nobody's settings reset on upgrade.
-const LEGACY_CROP_KEY = 'asset-manager-crop-enabled-v1';
-const LEGACY_SHAPE_KEYS = ['asset-manager-crop-shape-v1', 'bam-crop-shape-v1'];
-const LEGACY_PRESET_KEYS = ['bam-resizer-presets-v3', 'devtools-resizer-presets-v2'];
 
 const isMode = (v) => v === 'optimise' || v === 'place';
 const isFormat = (v) => v === 'webp' || v === 'png';
@@ -48,30 +33,54 @@ const isTrim = (v) => v === 'off' || v === 'tight' || v === 'square';
 const isBackground = (v) => v === 'keep' || v === 'remove';
 const isApply = (value) => value === 'all' || value === 'one';
 const isPresetId = (value) => typeof value === 'string' && value.length > 0;
+const isColour = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 
-/**
- * Trim was two switches before v4: cropping on or off, and - shown even while
- * cropping was off, where it did nothing - full or square. One three-way
- * control says the same thing without the dead state, and reads whichever pair
- * of old keys is on this machine so the setting survives the change.
- */
-function loadTrim() {
-  const stored = loadStored(TRIM_KEY, isTrim, null);
-  if (stored) return stored;
+// Every choice the switches on this page make, as it is before anybody has
+// saved anything: Optimise, WebP, one ZIP, a tight trim, the background kept.
+// This is what Reset default goes back to.
+const FACTORY = Object.freeze({
+  mode: 'optimise',
+  format: 'webp',
+  packaging: 'zip',
+  trim: 'tight',
+  background: 'keep',
+  applyTo: 'all',
+  presetId: 'top-product',
+  transparent: true,
+  colour: '#ffffff',
+});
 
-  const cropping = loadStored(LEGACY_CROP_KEY, (v) => v === 'on' || v === 'off', 'on');
-  if (cropping === 'off') return 'off';
+const VALID = {
+  mode: isMode,
+  format: isFormat,
+  packaging: isPackaging,
+  trim: isTrim,
+  background: isBackground,
+  applyTo: isApply,
+  presetId: isPresetId,
+  transparent: (value) => typeof value === 'boolean',
+  colour: isColour,
+};
 
-  const shape = LEGACY_SHAPE_KEYS.reduce(
-    (fallback, key) => loadStored(key, (v) => v === 'square' || v === 'full', fallback),
-    'full',
-  );
-  return shape === 'square' ? 'square' : 'tight';
+// The switches do not remember themselves. Changing one changes what is on
+// screen for as long as the tab is open; Save as default writes the whole set
+// here in one go, and that set is what the page opens with next time. Until
+// 4.0.1 every switch saved itself the moment it was clicked, so whatever was
+// tried last quietly became the next day's starting point.
+const DEFAULTS_KEY = 'asset-manager-images-defaults-v1';
+const PRESET_KEY = 'asset-manager-resizer-presets-v1';
+const LEGACY_PRESET_KEYS = ['bam-resizer-presets-v3', 'devtools-resizer-presets-v2'];
+
+/** Keep each field that is valid, and take the factory value for any that is not. */
+function sanitizeConfig(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return Object.fromEntries(Object.entries(FACTORY).map(([key, fallback]) =>
+    [key, VALID[key](source[key]) ? source[key] : fallback]));
 }
 
-const isCanvasBackground = (value) => value && typeof value === 'object' &&
-  typeof value.transparent === 'boolean' &&
-  typeof value.colour === 'string' && /^#[0-9a-f]{6}$/i.test(value.colour);
+const sameConfig = (a, b) => Object.keys(FACTORY).every((key) => a[key] === b[key]);
+
+const loadDefaults = () => sanitizeConfig(loadStored(DEFAULTS_KEY, (v) => Boolean(v) && typeof v === 'object', null));
 
 const isPresetList = (value) => Array.isArray(value) && value.every((preset) =>
   preset && typeof preset === 'object' &&
@@ -125,19 +134,29 @@ function carriedItems(carried) {
 }
 
 export function createImages(carried = null) {
-  let mode = isMode(carried?.mode) ? carried.mode : loadStored(MODE_KEY, isMode, 'optimise');
-
-  // Same override as the background model below: a browser with no WebP canvas
-  // encoder cannot honour the stored preference, so it is not pretended it can.
+  // A browser with no WebP canvas encoder, or without the module workers and
+  // OffscreenCanvas the background model needs, cannot honour a default that
+  // asks for them, so it is not pretended it can.
   const canWebp = isFormatSupported('webp');
-  let format = canWebp ? loadStored(FORMAT_KEY, isFormat, 'webp') : 'png';
-  let packaging = loadStored(PACKAGING_KEY, isPackaging, 'zip');
-
-  let trim = loadTrim();
-  // A browser without module workers or OffscreenCanvas cannot run the model at
-  // all, so the stored preference is overridden rather than left to fail later.
   const canCutOut = isSegmentationSupported();
-  let background = canCutOut ? loadStored(BACKGROUND_KEY, isBackground, 'keep') : 'keep';
+  const possible = (config) => ({
+    ...config,
+    format: canWebp ? config.format : 'png',
+    background: canCutOut ? config.background : 'keep',
+  });
+
+  let saved = loadDefaults();
+
+  // A tool switch, a language change or an update hands back what was on
+  // screen, saved or not. A 3.x address can ask for a mode on top of that.
+  const start = possible(sanitizeConfig(carried?.config ?? saved));
+  if (isMode(carried?.mode)) start.mode = carried.mode;
+
+  let mode = start.mode;
+  let format = start.format;
+  let packaging = start.packaging;
+  let trim = start.trim;
+  let background = start.background;
 
   const status = createStatus();
   const log = createLog();
@@ -154,6 +173,42 @@ export function createImages(carried = null) {
   // -------------------------------------------------------------------------
 
   const groups = [];
+
+  const saveDefaultButton = h('button', {
+    type: 'button',
+    class: 'btn btn--ghost btn--sm',
+    title: t('Open with these settings every time, in this browser.'),
+    onClick: () => {
+      saved = snapshot();
+      saveStored(DEFAULTS_KEY, saved);
+      syncControls();
+      toast(t('Saved as the default.'));
+    },
+  }, icon('check', 14), t('Save as default'));
+
+  const resetDefaultButton = h('button', {
+    type: 'button',
+    class: 'btn btn--ghost btn--sm',
+    title: t('Back to Optimise, WebP, one ZIP, a tight trim and the background kept.'),
+    onClick: () => {
+      saved = { ...FACTORY };
+      try { localStorage.removeItem(DEFAULTS_KEY); } catch { /* private mode */ }
+      applyConfig(FACTORY);
+      toast(t('Default reset.'));
+    },
+  }, icon('refresh', 14), t('Reset default'));
+
+  /**
+   * Each button only lights up when pressing it would change something:
+   * Save while the screen differs from the saved default, Reset while either
+   * of them differs from the original.
+   */
+  function syncDefaultButtons() {
+    const now = snapshot();
+    saveDefaultButton.disabled = busy || sameConfig(now, possible(saved));
+    resetDefaultButton.disabled = busy ||
+      (sameConfig(now, possible(FACTORY)) && sameConfig(saved, FACTORY));
+  }
 
   /**
    * One segmented control. `read` is called rather than captured because the
@@ -189,11 +244,11 @@ export function createImages(carried = null) {
         button.disabled = busy || Boolean(disabled?.(key));
       }
     }
+    syncDefaultButtons();
   }
 
   const formatSwitch = segmented(t('File format'), () => format, (value) => {
     format = value;
-    saveStored(FORMAT_KEY, value);
   }, [
     ['webp', 'Product images (WebP)', 'image'],
     ['png', 'Page images (PNG)', 'fileText'],
@@ -201,7 +256,6 @@ export function createImages(carried = null) {
 
   const packagingSwitch = segmented(t('Download'), () => packaging, (value) => {
     packaging = value;
-    saveStored(PACKAGING_KEY, value);
   }, [
     ['zip', 'One ZIP', 'archive'],
     ['single', 'Separate files', 'download'],
@@ -209,7 +263,6 @@ export function createImages(carried = null) {
 
   const modeSwitch = segmented(t('What to do'), () => mode, (value) => {
     mode = value;
-    saveStored(MODE_KEY, value);
     syncMode();
   }, [
     ['optimise', 'Optimise', 'crop'],
@@ -277,7 +330,6 @@ export function createImages(carried = null) {
 
   const trimSwitch = segmented(t('Trim'), () => trim, (value) => {
     trim = value;
-    saveStored(TRIM_KEY, value);
   }, [
     ['off', 'Off', 'image'],
     ['tight', 'Tight', 'crop'],
@@ -286,7 +338,6 @@ export function createImages(carried = null) {
 
   const backgroundSwitch = segmented(t('Background'), () => background, (value) => {
     background = value;
-    saveStored(BACKGROUND_KEY, value);
   }, [
     ['keep', 'Keep', 'image'],
     ['remove', 'Cut out', 'wand'],
@@ -453,10 +504,9 @@ export function createImages(carried = null) {
     BUILT_IN,
   );
   presets = loadStored(PRESET_KEY, isPresetList, presets);
-  // A stored id can name a preset that has since been deleted or reset away,
-  // so it is honoured only while it still exists.
-  const storedId = loadStored(SELECTED_KEY, isPresetId, null);
-  const opening = presets.find((preset) => preset.id === storedId) ?? presets[0];
+  // A default can name a preset that has since been deleted or reset away, so
+  // it is honoured only while it still exists.
+  const opening = presets.find((preset) => preset.id === start.presetId) ?? presets[0];
   let presetId = opening?.id ?? 'top-product';
   let size = { w: opening?.w ?? 264, h: opening?.h ?? 248 };
 
@@ -466,13 +516,12 @@ export function createImages(carried = null) {
   let index = Math.min(Math.max(Number(carried?.index) || 0, 0), Math.max(items.length - 1, 0));
   const current = () => items[index] ?? null;
 
-  let applyTo = loadStored(APPLY_KEY, isApply, 'all');
+  let applyTo = start.applyTo;
   /** The images an adjustment touches: all of them, or just the one on screen. */
   const targets = () => (applyTo === 'all' ? items : (current() ? [current()] : []));
 
-  const storedCanvasBg = loadStored(CANVAS_BG_KEY, isCanvasBackground, null);
-  let transparent = storedCanvasBg ? storedCanvasBg.transparent : true;
-  let canvasColour = storedCanvasBg ? storedCanvasBg.colour : '#ffffff';
+  let transparent = start.transparent;
+  let canvasColour = start.colour;
 
   // Set once the items have been handed to main.js's stash, which holds them
   // for whenever this tool is mounted again. Revoking their object URLs in
@@ -747,12 +796,15 @@ export function createImages(carried = null) {
 
   const applyHint = h('p', { class: 'panel__hint' });
 
-  const applySwitch = segmented(t('Adjustments'), () => applyTo, (value) => {
-    applyTo = value;
-    saveStored(APPLY_KEY, value);
-    applyHint.textContent = t(value === 'all'
+  function syncApplyHint() {
+    applyHint.textContent = t(applyTo === 'all'
       ? 'Fit, Fill, the scale slider and dragging move every loaded image together.'
       : 'Fit, Fill, the scale slider and dragging move only the image on screen. Click a thumbnail to work on another one.');
+  }
+
+  const applySwitch = segmented(t('Adjustments'), () => applyTo, (value) => {
+    applyTo = value;
+    syncApplyHint();
   }, [['all', 'All images'], ['one', 'This image']]);
 
   const applyRow = h('div', { class: 'row row--between' },
@@ -811,12 +863,14 @@ export function createImages(carried = null) {
     const preset = presets.find((entry) => entry.id === id);
     if (!preset) return;
     presetId = id;
-    saveStored(SELECTED_KEY, id);
+    // Already true when the picker itself changed; not when Reset default did.
+    presetSelect.value = id;
     size = { w: preset.w, h: preset.h };
     widthInput.value = String(preset.w);
     heightInput.value = String(preset.h);
     syncCanvasBox();
     frameAll('contain');
+    syncDefaultButtons();
   }
 
   const widthInput = h('input', { class: 'input', type: 'number', min: '1', value: String(size.w), 'aria-label': t('Width') });
@@ -847,7 +901,6 @@ export function createImages(carried = null) {
       presets = [...presets, preset];
       saveStored(PRESET_KEY, presets);
       presetId = preset.id;
-      saveStored(SELECTED_KEY, preset.id);
       size = { w, h: hgt };
       nameInput.value = '';
       renderPresets();
@@ -895,7 +948,6 @@ export function createImages(carried = null) {
     onInput: () => {
       canvasColour = bgColorInput.value;
       transparent = false;
-      saveCanvasBackground();
       syncControls();
       render();
     },
@@ -903,13 +955,8 @@ export function createImages(carried = null) {
 
   const canvasBgSwitch = segmented(t('Background'), () => (transparent ? 'transparent' : 'colour'), (value) => {
     transparent = value === 'transparent';
-    saveCanvasBackground();
     render();
   }, [['transparent', 'Transparent'], ['colour', 'Colour']]);
-
-  function saveCanvasBackground() {
-    saveStored(CANVAS_BG_KEY, { transparent, colour: canvasColour });
-  }
 
   // --- export ------------------------------------------------------------
 
@@ -1141,9 +1188,36 @@ export function createImages(carried = null) {
     downloadLabel.textContent = batch ? t('Download all') : t('Download result');
   }
 
+  /** Every choice on screen, in the shape a saved default takes. */
+  function snapshot() {
+    return {
+      mode, format, packaging, trim, background, applyTo, presetId, transparent, colour: canvasColour,
+    };
+  }
+
+  /** Put a whole configuration on screen at once: what Reset default does. */
+  function applyConfig(next) {
+    const config = possible(next);
+    ({ mode, format, packaging, trim, background, applyTo, transparent } = config);
+    canvasColour = config.colour;
+    bgColorInput.value = canvasColour;
+    syncApplyHint();
+    // Changing the canvas size re-frames every loaded image, so it only
+    // happens when the size really changes.
+    if (config.presetId !== presetId && presets.some((preset) => preset.id === config.presetId)) {
+      selectPreset(config.presetId);
+    }
+    syncControls();
+    syncMode();
+    render();
+  }
+
+  const head = pageHead('image', t('Images'),
+    t('Trim and convert product photos in bulk, or place one inside a canvas of a fixed size.'));
+  head.append(h('div', { class: 'page-head__actions' }, saveDefaultButton, resetDefaultButton));
+
   const root = h('div', { class: 'stack' },
-    pageHead('image', t('Images'),
-      t('Trim and convert product photos in bulk, or place one inside a canvas of a fixed size.')),
+    head,
     sharedPanel,
     optimisePanel,
     placePanel,
@@ -1165,9 +1239,7 @@ export function createImages(carried = null) {
     item.position = { ...restore[position].position };
   });
   syncScaleControls();
-  applyHint.textContent = t(applyTo === 'all'
-    ? 'Fit, Fill, the scale slider and dragging move every loaded image together.'
-    : 'Fit, Fill, the scale slider and dragging move only the image on screen. Click a thumbnail to work on another one.');
+  syncApplyHint();
   renderStrip();
   syncCanvasBox();
   syncControls();
@@ -1177,7 +1249,12 @@ export function createImages(carried = null) {
     el: root,
     getState() {
       handedOver = true;
-      return { mode, items, index };
+      return { config: snapshot(), items, index };
+    },
+    // Unsaved choices survive the reload an update performs; the loaded images
+    // cannot, as before.
+    getPortableState() {
+      return { config: snapshot() };
     },
     destroy() {
       runToken += 1;

@@ -183,6 +183,15 @@ a { color: var(--accent-light); }
 }
 .page-head h1 { font-size: 1.0625rem; }
 .page-head p { margin-block-start: 2px; font-size: 0.8125rem; color: var(--text-muted); }
+.page-head__text { flex: 1 1 0; min-width: 0; }
+/* Actions that belong to the whole tool, such as saving its settings as the
+   default. They sit at the far end of the heading, and drop beneath it on a
+   narrow screen rather than squeezing the title. */
+.page-head__actions { display: flex; gap: 8px; flex: none; }
+@media (max-width: 640px) {
+  .page-head { flex-wrap: wrap; }
+  .page-head__actions { flex-basis: 100%; }
+}
 
 /* ---------- controls -------------------------------------------------- */
 

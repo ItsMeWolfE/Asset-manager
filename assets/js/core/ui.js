@@ -188,6 +188,6 @@ export function toast(message) {
 export function pageHead(iconName, title, description) {
   return h('header', { class: 'page-head' },
     h('div', { class: 'page-head__icon' }, icon(iconName, 18)),
-    h('div', null, h('h1', null, title), h('p', null, description)),
+    h('div', { class: 'page-head__text' }, h('h1', null, title), h('p', null, description)),
   );
 }
