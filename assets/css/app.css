@@ -25,6 +25,7 @@
   --text-muted: #8d99aa;
   --text-muted-dark: #667184;
   --accent-main: #5b6df8;
+  --on-accent: #ffffff;
   --accent-hover: #7181ff;
   --accent-light: #91a0ff;
 
@@ -97,7 +98,7 @@ a { color: var(--accent-light); }
   display: grid; place-items: center;
   width: 32px; height: 32px; flex: none;
   border-radius: var(--radius-sm);
-  background: var(--accent-main); color: #fff;
+  background: var(--accent-main); color: var(--on-accent);
 }
 .topbar__title { font-size: 0.9375rem; font-weight: 700; white-space: nowrap; }
 .topbar__ver { font-size: 0.6875rem; color: var(--text-muted-dark); font-variant-numeric: tabular-nums; }
@@ -198,7 +199,7 @@ a { color: var(--accent-light); }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 9px 16px; border-radius: var(--radius);
-  border: 1px solid transparent; background: var(--accent-main); color: #fff;
+  border: 1px solid transparent; background: var(--accent-main); color: var(--on-accent);
   font: inherit; font-weight: 600; font-size: 0.8125rem;
   cursor: pointer; transition: background 0.15s, opacity 0.15s;
 }
@@ -234,7 +235,7 @@ a { color: var(--accent-light); }
   cursor: pointer; white-space: nowrap;
 }
 .segmented button:hover:not(:disabled) { color: var(--text-highlight); }
-.segmented button[aria-pressed="true"] { background: var(--accent-main); color: #fff; }
+.segmented button[aria-pressed="true"] { background: var(--accent-main); color: var(--on-accent); }
 .segmented button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -349,7 +350,7 @@ input[type="color"] {
   cursor: pointer;
 }
 .chip:hover { color: var(--text-highlight); }
-.chip[aria-pressed="true"] { border-color: var(--accent-main); background: var(--accent-main); color: #fff; }
+.chip[aria-pressed="true"] { border-color: var(--accent-main); background: var(--accent-main); color: var(--on-accent); }
 
 .swatch {
   display: flex; flex-direction: column; align-items: center; gap: 5px;

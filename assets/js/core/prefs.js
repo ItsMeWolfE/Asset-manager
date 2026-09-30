@@ -79,6 +79,27 @@ function lighten(hex, percent) {
   return `#${channel(0)}${channel(2)}${channel(4)}`;
 }
 
+/** WCAG relative luminance of a #rrggbb colour, 0 for black to 1 for white. */
+function luminance(hex) {
+  const clean = hex.replace(/^#/, '');
+  const full = clean.length === 3 ? clean.replace(/(.)/g, '$1$1') : clean;
+  const [r, g, b] = [0, 2, 4].map((offset) => {
+    const c = (Number.parseInt(full.slice(offset, offset + 2), 16) || 0) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * The text colour to put on an accent: white, until the accent is so light
+ * that white falls below 3:1 contrast - the WCAG floor for bold text like the
+ * buttons' - and then black, which at that point has at least 7:1. Every
+ * built-in theme's accent stays white.
+ */
+function textOn(hex) {
+  return 1.05 / (luminance(hex) + 0.05) < 3 ? '#000000' : '#ffffff';
+}
+
 export function applyPrefs() {
   const theme = THEME_BY_ID[prefs.theme] || THEME_BY_ID.dark;
   const root = document.documentElement;
@@ -92,6 +113,11 @@ export function applyPrefs() {
     root.style.setProperty('--accent-hover', lighten(prefs.accent, 14));
     root.style.setProperty('--accent-light', lighten(prefs.accent, 32));
   }
+
+  // Everything that sits on the accent - buttons, the pressed half of every
+  // switch, the logo tile - takes its text colour from this, so a light
+  // accent turns that text black instead of leaving it white and unreadable.
+  root.style.setProperty('--on-accent', textOn(prefs.accent || theme.vars['--accent-main']));
 
   root.style.setProperty('--font-scale', `${prefs.fontScale}%`);
   root.dataset.scheme = theme.scheme;

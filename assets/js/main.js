@@ -227,9 +227,35 @@ function buildPrefs() {
     }, label);
   }
 
-  function render() {
+  // The accent row's changing parts, kept so dragging the colour picker can
+  // update them without rebuilding the panel. Rebuilding it replaced the
+  // <input type="color"> under the open picker, which closed the picker after
+  // the very first colour it reported.
+  let accentInput = null;
+  let accentCode = null;
+  let accentReset = null;
+
+  function currentAccent() {
     const theme = THEME_BY_ID[prefs.theme] || THEME_BY_ID.dark;
-    const accent = prefs.accent || theme.vars['--accent-main'];
+    return prefs.accent || theme.vars['--accent-main'];
+  }
+
+  function syncAccentRow() {
+    const accent = currentAccent();
+    if (accentInput.value !== accent) accentInput.value = accent;
+    accentCode.textContent = accent;
+    accentReset.hidden = !prefs.accent;
+  }
+
+  function render() {
+    const accent = currentAccent();
+    accentInput = h('input', {
+      type: 'color', value: accent, 'aria-label': t('Accent colour'),
+      onInput: (event) => setPrefs({ accent: event.target.value }),
+    });
+    accentCode = h('code', null, accent);
+    accentReset = h('button', { type: 'button', class: 'link-btn', onClick: () => setPrefs({ accent: null }) }, t('Reset'));
+    accentReset.hidden = !prefs.accent;
 
     clear(panel).append(
       h('section', { class: 'pop__section' },
@@ -267,14 +293,9 @@ function buildPrefs() {
       h('section', { class: 'pop__section' },
         h('h3', null, t('Accent colour')),
         h('div', { class: 'accent-row' },
-          h('input', {
-            type: 'color', value: accent, 'aria-label': t('Accent colour'),
-            onInput: (event) => setPrefs({ accent: event.target.value }),
-          }),
-          h('code', null, accent),
-          prefs.accent
-            ? h('button', { type: 'button', class: 'link-btn', onClick: () => setPrefs({ accent: null }) }, t('Reset'))
-            : null)),
+          accentInput,
+          accentCode,
+          accentReset)),
     );
   }
 
@@ -286,7 +307,14 @@ function buildPrefs() {
     if (open && !root.contains(event.target)) setOpen(false);
   });
 
-  return { el: root, refresh: () => { if (open) render(); } };
+  return {
+    el: root,
+    refresh(changed = []) {
+      if (!open) return;
+      if (accentCode && changed.length === 1 && changed[0] === 'accent') syncAccentRow();
+      else render();
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -316,7 +344,7 @@ function boot() {
   document.body.replaceChildren(shell);
 
   onPrefsChange((changed) => {
-    prefsPopover.refresh();
+    prefsPopover.refresh(changed);
     // Language changes the strings baked into every tool, so rebuild.
     if (changed.includes('lang')) {
       rebuildNavLabels();
