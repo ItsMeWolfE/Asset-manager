@@ -17,7 +17,7 @@ closing the tab throws all of it away.
 | --- | --- |
 | **Images** | Two modes over one dropzone. *Optimise* converts product photos to WebP or PNG in bulk, trimming the empty margin off them unless Trim is off, and can cut the product out of its background. *Place* puts an image, exactly where you want it, inside a fixed canvas size. |
 | **HTML Cleaner** | Turns a supplier's messy description HTML into something safe to paste into the site. |
-| **Spreadsheets** | Pulls item codes out of any supplier list with either the updated price or the stock value beside them, and turns a Dragon stock export into the two-column file the import expects. The Output switch picks which of the three. |
+| **Spreadsheets** | Pulls item codes out of any supplier list with the updated price, the stock value or text of your own beside them, and turns a Dragon stock export into the two-column file the import expects. The Output switch picks which of the three. |
 
 The **About** tab inside the app documents every tool in full — what it is for,
 how to use it step by step, and what to watch out for — in English and Hebrew.
@@ -191,7 +191,7 @@ assets/js/
   workers/crop-worker-source.js  image bounds analysis
   workers/segment-worker.js      U^2-Net inference
   vendor/sheet-worker-source.js   SheetJS + Dragon/Price processors
-  vendor/stock-processor-source.js  stock column and 9/10 values
+  vendor/stock-processor-source.js  stock column, 9/10 and custom values
 
 assets/models/u2netp.onnx   the background-removal network (4.4 MB)
 assets/vendor/onnxruntime/  ONNX Runtime Web, WebAssembly build (11 MB)

@@ -257,7 +257,9 @@ export const STOCK_WORKER_SRC = String.raw`
         : "Could not find a product item-code column, by heading or by content. Fields containing 'ספק' or 'יצרן' are ignored.");
     }
 
-    var fixed = options.value === OUT_OF_STOCK ? OUT_OF_STOCK : IN_STOCK;
+    // Marking every row writes one value against every code: 10, 9, or text of
+    // the user's own from the Custom option. Text, like every other cell here.
+    var fixed = typeof options.value === "string" && options.value.trim() ? options.value.trim() : IN_STOCK;
     var rows = [];
     var unknownSamples = [];
     var skippedBlank = 0;

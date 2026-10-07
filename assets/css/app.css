@@ -501,3 +501,13 @@ input[type="color"] {
 .release__ver { font-size: 0.6875rem; font-weight: 700; color: var(--accent-main); }
 .release__title { font-size: 0.8125rem; font-weight: 600; color: var(--text-highlight); }
 .release__body { font-size: 0.8125rem; color: var(--text-muted); }
+
+/* A switch with more options than a phone is wide: two to a row there,
+   instead of a strip that scrolls sideways and hides the last option. */
+@media (max-width: 640px) {
+  .segmented--grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .segmented--grid button { justify-content: center; }
+}
+/* In a labelled field a switch keeps its own width instead of stretching. */
+.field > .segmented { align-self: flex-start; }
+.custom-text { max-width: 420px; }
