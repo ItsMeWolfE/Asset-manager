@@ -1,8 +1,8 @@
 {
-  "version": "4.0.2",
+  "version": "4.1.0",
   "build": "dev",
   "built": "dev",
-  "released": "2026-09-30",
-  "title": "Readable text on any accent colour",
-  "notes": "The accent colour picker in the settings stays open while you drag across it, instead of closing on the first colour it picks. Text on the accent colour - buttons, the chosen side of each switch, the logo - now turns black when the colour is too light for white to be read on it, and turns back to white when it is dark enough again."
+  "released": "2026-10-07",
+  "title": "Your own text in column B",
+  "notes": "Stock in Spreadsheets now has one Column B switch instead of two: Stock column reads it from the file, In stock (10) and Out of stock (9) write that value on every row, and the new Custom option writes whatever text you type next to every item code."
 }

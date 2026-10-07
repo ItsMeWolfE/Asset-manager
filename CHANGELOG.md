@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.1.0 - 2026-10-07
+
+**Your own text in column B**
+
+Stock in Spreadsheets now has one Column B switch instead of two: Stock column reads it from the file, In stock (10) and Out of stock (9) write that value on every row, and the new Custom option writes whatever text you type next to every item code.
+
 ## 4.0.2 - 2026-09-30
 
 **Readable text on any accent colour**
