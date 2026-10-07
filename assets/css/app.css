@@ -507,6 +507,8 @@ input[type="color"] {
 @media (max-width: 640px) {
   .segmented--grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .segmented--grid button { justify-content: center; }
+  /* An odd one out takes the whole last row. */
+  .segmented--grid button:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 /* In a labelled field a switch keeps its own width instead of stretching. */
 .field > .segmented { align-self: flex-start; }

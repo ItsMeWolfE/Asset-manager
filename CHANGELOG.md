@@ -4,7 +4,7 @@
 
 **Your own text in column B**
 
-Stock in Spreadsheets now has one Column B switch instead of two: Stock column reads it from the file, In stock (10) and Out of stock (9) write that value on every row, and the new Custom option writes whatever text you type next to every item code.
+Spreadsheets has a fourth output, Custom, beside Prices, Stock and Dragon: it writes whatever text you type into column B next to every item code. Stock's two switches became one Column B switch: Stock column reads it from the file, and In stock (10) and Out of stock (9) write that value on every row.
 
 ## 4.0.2 - 2026-09-30
 

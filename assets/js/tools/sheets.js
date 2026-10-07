@@ -1,7 +1,7 @@
 // Spreadsheets - pulls two columns out of a supplier list and writes them back
-// as a text-safe XLSX: item codes with either the updated price or a column B
-// value (read from the stock column, 9 or 10 for every row, or your own text),
-// or a Dragon export reduced to barcodes and availability.
+// as a text-safe XLSX: item codes with the updated price, a stock value (read
+// from the stock column, or 9 or 10 for every row) or text of your own, or a
+// Dragon export reduced to barcodes and availability.
 //
 // All three were separate jobs in the same worker before v4, behind two tools
 // that shared a dropzone, a log and an output format. They are one tool now,
@@ -144,12 +144,11 @@ const isMode = (v) => v === 'file' || v === 'paste';
 // only bounds what a very long paste does to the textarea.
 const PREVIEW_ROWS = 200;
 
-const isOutput = (v) => v === 'price' || v === 'stock' || v === 'dragon';
+const isOutput = (v) => v === 'price' || v === 'stock' || v === 'dragon' || v === 'custom';
 
 // What a Stock run writes into column B: read from the file's stock column,
-// one of the two values the import understands for every row, or text of
-// your own for every row.
-const isColumnB = (v) => v === 'detect' || v === '10' || v === '9' || v === 'custom';
+// or one of the two values the import understands for every row.
+const isColumnB = (v) => v === 'detect' || v === '10' || v === '9';
 
 /** 4.0.x carried this as two settings; an update applied mid-session still hands those over. */
 function carriedColumnB(carried) {
@@ -241,12 +240,14 @@ export function createSheets(carried = null) {
     if (output === 'price') return { tool: 'price', ...source };
     if (output === 'stock') {
       if (columnB === 'detect') return { tool: 'stock', mode: 'detect', ...source };
-      return { tool: 'stock', mode: 'all', value: columnB === 'custom' ? customText.trim() : columnB, ...source };
+      return { tool: 'stock', mode: 'all', value: columnB, ...source };
     }
+    // Custom is the stock worker's every-row pass with your text as the value.
+    if (output === 'custom') return { tool: 'stock', mode: 'all', value: customText.trim(), ...source };
     return { tool: 'dragon', buffer: source.buffer, filter: dragonFilter };
   }
 
-  const SUFFIX = { price: '_price_fixed.xlsx', stock: '_stock_fixed.xlsx', dragon: '_dragon_fixed.xlsx' };
+  const SUFFIX = { price: '_price_fixed.xlsx', stock: '_stock_fixed.xlsx', dragon: '_dragon_fixed.xlsx', custom: '_custom_fixed.xlsx' };
 
   /**
    * What the worker decided, line by line. A Dragon run reports none of this:
@@ -282,7 +283,7 @@ export function createSheets(carried = null) {
           'other stock column was passed over.',
           'other stock columns were passed over.'));
       }
-    } else if (columnB === 'custom') {
+    } else if (output === 'custom') {
       log.add(`${t('Column B')}: ${result.value}`);
     } else {
       log.add(`${t('Stock value')}: ${t(result.value === '9' ? 'Out of stock (9)' : 'In stock (10)')}`);
@@ -314,7 +315,10 @@ export function createSheets(carried = null) {
     if (output === 'dragon') log.add(t('Barcodes were read as formatted text, so leading zeroes survived.'));
     else reportColumns(result);
 
-    const name = result.filename || `${fallbackName}${SUFFIX[output]}`;
+    // The stock worker names its file for stock; a Custom run is not one.
+    const name = output === 'custom' && result.filename
+      ? result.filename.replace(/_stock_fixed\.xlsx$/, SUFFIX.custom)
+      : result.filename || `${fallbackName}${SUFFIX[output]}`;
     saveBlob(new Blob([result.buffer], { type: XLSX_MIME }), name);
 
     const unit = output === 'dragon'
@@ -332,7 +336,7 @@ export function createSheets(carried = null) {
 
   /** Custom with nothing typed has nothing to write; say so instead of running. */
   function missingCustomText() {
-    if (output !== 'stock' || columnB !== 'custom' || customText.trim()) return false;
+    if (output !== 'custom' || customText.trim()) return false;
     status.set({ phase: 'error', title: t('Nothing to write in column B'), summary: t('Type the text for column B first.'), progress: 0 });
     customInput.focus();
     return true;
@@ -493,13 +497,14 @@ export function createSheets(carried = null) {
   const DROP_HINT = {
     price: 'Accepts XLSX, XLS and CSV. Every worksheet is scanned and the best item-code column is chosen, together with the price column beside it.',
     stock: 'Accepts XLSX, XLS and CSV. Every worksheet is scanned and the best item-code column is chosen, together with the stock column beside it.',
-    fixed: 'Accepts XLSX, XLS and CSV. Every worksheet is scanned and the best item-code column is chosen.',
+    codesOnly: 'Accepts XLSX, XLS and CSV. Every worksheet is scanned and the best item-code column is chosen.',
     dragon: 'Accepts XLSX, XLS and CSV. The barcode and availability columns are found by their headings, and barcodes are read as formatted text so leading zeroes survive.',
   };
 
   const INPUT_HINT = {
     price: 'Check the log: it names the worksheet and the columns it chose.',
     stock: 'Check the log: it names the worksheet and the columns it chose.',
+    custom: 'Check the log: it names the worksheet and the columns it chose.',
     dragon: 'A Dragon export is read from a file. The two columns it needs are always named the same, so there is nothing to choose.',
   };
 
@@ -514,7 +519,9 @@ export function createSheets(carried = null) {
     modeSwitch.hidden = !pasteable;
     filePanel.hidden = showing;
     pastePanel.hidden = !showing;
-    dropzone.setHint(t(DROP_HINT[output === 'stock' && columnB !== 'detect' ? 'fixed' : output]));
+    // Only the item codes are read when column B is not coming from the file.
+    const codesOnly = output === 'custom' || (output === 'stock' && columnB !== 'detect');
+    dropzone.setHint(t(DROP_HINT[codesOnly ? 'codesOnly' : output]));
     inputHint.textContent = t(INPUT_HINT[output]);
   }
 
@@ -536,15 +543,15 @@ export function createSheets(carried = null) {
     'aria-label': t('Custom text'),
     onInput: () => { customText = customInput.value; },
   });
-  const customField = h('div', { class: 'custom-text' }, customInput);
+  const customPanel = h('div', { class: 'field custom-text' },
+    h('span', { class: 'field__label' }, t('Column B')),
+    customInput,
+    h('p', { class: 'panel__hint' }, t('Every item code in the file gets this text in column B.')));
 
   function setColumnB(value) {
     columnB = value;
-    customField.hidden = value !== 'custom';
     columnBHint.textContent = t(COLUMN_B_HINT[value === 'detect' ? 'detect' : 'fixed']);
     syncInput();
-    // Straight to the box when Custom is picked, but not when the tool opens on it.
-    if (value === 'custom' && mounted) customInput.focus();
   }
 
   const stockPanel = h('div', { class: 'field' },
@@ -553,9 +560,7 @@ export function createSheets(carried = null) {
       ['detect', 'Stock column', 'table'],
       ['10', 'In stock (10)', 'check'],
       ['9', 'Out of stock (9)', 'x'],
-      ['custom', 'Custom', 'type'],
     ], 'segmented--grid'),
-    customField,
     columnBHint);
 
   const dragonPanel = h('div', { class: 'field' },
@@ -568,11 +573,15 @@ export function createSheets(carried = null) {
     output = value;
     stockPanel.hidden = value !== 'stock';
     dragonPanel.hidden = value !== 'dragon';
+    customPanel.hidden = value !== 'custom';
     syncInput();
+    // Straight to the box when Custom is picked, but not when the tool opens on it.
+    if (value === 'custom' && mounted) customInput.focus();
   }
 
   const outputSwitch = segmented(t('Output'), () => output, setOutput,
-    [['price', 'Prices', 'badgeDollar'], ['stock', 'Stock', 'archive'], ['dragon', 'Dragon', 'table']]);
+    [['price', 'Prices', 'badgeDollar'], ['stock', 'Stock', 'archive'], ['dragon', 'Dragon', 'table'], ['custom', 'Custom', 'type']],
+    'segmented--grid');
 
   const root = h('div', { class: 'stack' },
     pageHead('table', t('Spreadsheets'),
@@ -585,7 +594,8 @@ export function createSheets(carried = null) {
           h('p', { class: 'panel__hint' }, t('Item codes with their price, a stock value or your own text, or a Dragon export.'))),
         outputSwitch),
       stockPanel,
-      dragonPanel),
+      dragonPanel,
+      customPanel),
 
     h('section', { class: 'panel' },
       h('div', { class: 'panel__head' },
