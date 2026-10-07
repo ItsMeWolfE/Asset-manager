@@ -16,6 +16,7 @@ export const he = {
   strings: {
     'A Dragon export is read from a file. The two columns it needs are always named the same, so there is nothing to choose.': 'ייצוא Dragon נקרא מתוך קובץ. שתי העמודות שהוא צריך נקראות תמיד אותו הדבר, ולכן אין מה לבחור.',
     "A list of barcodes beside a column of wordings, with no headings at all, failed in both stock modes. When nothing in the table scores as a heading, the columns are now chosen by what is in them instead: the one that reads as item codes, and the one whose wordings map to stock. Headings still win wherever they exist.": "רשימה של ברקודים לצד עמודת ניסוחים, בלי כותרות כלל, נכשלה בשני מצבי המלאי. כששום דבר בטבלה אינו מנוקד ככותרת, העמודות נבחרות עכשיו לפי התוכן שלהן: זו שנקראת כקודי פריט, וזו שהניסוחים שלה מתורגמים למלאי. כותרות עדיין גוברות בכל מקום שבו הן קיימות.",
+    'A list pasted with spaces between the barcode and the name, instead of a tab, now splits into columns. Before, each line stayed one cell, so In stock, Out of stock and Custom wrote the barcode together with the name into column A.': 'רשימה שמודבקת עם רווחים בין הברקוד לשם, במקום טאב, מתפצלת עכשיו לעמודות. קודם כל שורה נשארה תא אחד, ולכן במלאי, אזל מהמלאי ומותאם אישית כתבו בעמודה A את הברקוד יחד עם השם.',
     "A new About tab explains what every tool is for, how to use it step by step, and what to watch out for, written for someone opening the page for the first time. Available in both languages.": "לשונית אודות חדשה מסבירה למה משמש כל כלי, כיצד להשתמש בו שלב אחר שלב, ועל מה כדאי לשים לב, בניסוח למי שפותח את העמוד לראשונה. זמינה בשתי השפות.",
     "A new version has been downloaded and is ready.": "גרסה חדשה הורדה ומוכנה.",
     "A newer version has already been downloaded.": "גרסה חדשה יותר כבר הורדה.",
@@ -178,6 +179,7 @@ export const he = {
     "Paste rich text here…": "הדבק כאן טקסט עשיר…",
     "Paste rows straight from Excel or a web page…": "הדביקו שורות ישירות מאקסל או מדף אינטרנט…",
     "Paste table": "הדבקת טבלה",
+    'Pasted lists without tabs': 'רשימות מודבקות בלי טאבים',
     "Pasted spreadsheet input": "קלט גיליון מודבק",
     "Pasted table": "טבלה שהודבקה",
     'Place': 'מיקום',
