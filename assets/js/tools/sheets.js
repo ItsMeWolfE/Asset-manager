@@ -32,14 +32,42 @@ const BIDI_MARKS = /[‎‏؜‪-‮⁦-⁩]/g;
 
 const cleanCell = (value) => String(value ?? '').replace(BIDI_MARKS, '').replace(/\s+/g, ' ').trim();
 
+// The worker's own test for an item code: some digits, no Hebrew or Arabic.
+const looksLikeCode = (text) => text.length >= 3 && /\d/.test(text) && !/[\u0590-\u05FF\u0600-\u06FF]/.test(text);
+
 /**
- * Square off a ragged grid: trim trailing blank rows, then pad every row to the
- * widest one so the worker sees a rectangle.
+ * A list copied out of plain text, an email or a one-column table has no tabs:
+ * each line arrives as one cell, the barcode and the name after it together,
+ * and the barcode would be written out with the name still attached. When no
+ * row has more than one cell, a leading item code is split off at the first
+ * space, and the rest of the line - or a whole line that starts with no code,
+ * such as a heading - is split into columns on runs of two or more spaces. A
+ * lone code is left as it is.
+ */
+function splitLooseLines(rows) {
+  const lines = rows.map((row) => (Array.isArray(row) ? row : [row]));
+  const filled = (row) => row.filter((cell) => String(cell ?? '').trim());
+  if (lines.some((row) => filled(row).length > 1)) return lines;
+
+  return lines.map((row) => {
+    const line = String(filled(row)[0] ?? '').replace(BIDI_MARKS, '').trim();
+    if (!line) return [];
+
+    const match = line.match(/^(\S+)\s+(\S.*)$/);
+    if (match && looksLikeCode(match[1])) return [match[1], ...match[2].split(/\s{2,}/)];
+    return line.split(/\s{2,}/);
+  });
+}
+
+/**
+ * Square off a ragged grid: split lines that came without columns, trim
+ * trailing blank rows, then pad every row to the widest one so the worker sees
+ * a rectangle.
  */
 function normalizeGrid(rows) {
   if (!Array.isArray(rows)) return [];
 
-  const grid = rows.map((row) => (Array.isArray(row) ? row : [row]).map(cleanCell));
+  const grid = splitLooseLines(rows).map((row) => row.map(cleanCell));
 
   while (grid.length && grid[grid.length - 1].every((cell) => !cell)) grid.pop();
   if (!grid.length) return [];
