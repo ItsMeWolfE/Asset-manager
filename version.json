@@ -1,8 +1,8 @@
 {
-  "version": "4.1.0",
+  "version": "4.1.1",
   "build": "dev",
   "built": "dev",
   "released": "2026-10-07",
-  "title": "Your own text in column B",
-  "notes": "Spreadsheets has a fourth output, Custom, beside Prices, Stock and Dragon: it writes whatever text you type into column B next to every item code. Stock's two switches became one Column B switch: Stock column reads it from the file, and In stock (10) and Out of stock (9) write that value on every row."
+  "title": "Pasted lists without tabs",
+  "notes": "A list pasted with spaces between the barcode and the name, instead of a tab, now splits into columns. Before, each line stayed one cell, so In stock, Out of stock and Custom wrote the barcode together with the name into column A."
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.1.1 - 2026-10-07
+
+**Pasted lists without tabs**
+
+A list pasted with spaces between the barcode and the name, instead of a tab, now splits into columns. Before, each line stayed one cell, so In stock, Out of stock and Custom wrote the barcode together with the name into column A.
+
 ## 4.1.0 - 2026-10-07
 
 **Your own text in column B**
