@@ -196,6 +196,8 @@ export const he = {
     "Price XLSX Fixer gained support for HTML tables and tab-separated clipboard data, while supplier and manufacturer code headers were excluded.": "מתקן מחירים XLSX קיבל תמיכה בטבלאות HTML ובנתוני לוח מופרדי טאב, וכותרות של קוד ספק ויצרן הוצאו מההתאמה.",
     "Price column": "עמודת מחיר",
     "Prices": "מחירים",
+    'Prices now reads a list of barcodes beside prices that has no heading row, pasted or uploaded, the way Stock already did. Before, it stopped with an error saying it could not find the item-code and price columns.': 'מחירים קורא עכשיו רשימה של ברקודים לצד מחירים בלי שורת כותרות, מודבקת או מועלית, כמו שמלאי כבר עשה. קודם הוא נעצר עם שגיאה שלא נמצאו עמודות קוד הפריט והמחיר.',
+    'Prices without headings': 'מחירים בלי כותרות',
     "Prices, or the 9 and 10 stock values the import expects.": "מחירים, או ערכי המלאי 9 ו-10 שהייבוא מצפה להם.",
     "Processing complete": "העיבוד הושלם",
     "Processing failed": "העיבוד נכשל",
