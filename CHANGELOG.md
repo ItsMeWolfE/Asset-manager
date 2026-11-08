@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.1.2 - 2026-11-08
+
+**Prices without headings**
+
+Prices now reads a list of barcodes beside prices that has no heading row, pasted or uploaded, the way Stock already did. Before, it stopped with an error saying it could not find the item-code and price columns.
+
 ## 4.1.1 - 2026-10-07
 
 **Pasted lists without tabs**

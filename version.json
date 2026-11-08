@@ -1,8 +1,8 @@
 {
-  "version": "4.1.1",
+  "version": "4.1.2",
   "build": "dev",
   "built": "dev",
-  "released": "2026-10-07",
-  "title": "Pasted lists without tabs",
-  "notes": "A list pasted with spaces between the barcode and the name, instead of a tab, now splits into columns. Before, each line stayed one cell, so In stock, Out of stock and Custom wrote the barcode together with the name into column A."
+  "released": "2026-11-08",
+  "title": "Prices without headings",
+  "notes": "Prices now reads a list of barcodes beside prices that has no heading row, pasted or uploaded, the way Stock already did. Before, it stopped with an error saying it could not find the item-code and price columns."
 }
