@@ -23,6 +23,8 @@ export const STOCK_WORKER_SRC = String.raw`
   var cellText = api.cellText;
   var displayed = api.displayed;
   var scoreItem = api.scoreItem;
+  var processPrice = api.processPrice;
+  var bareNumber = api.bareNumber;
 
   // The two values the import understands. They are written as text, like the
   // price output, so nothing downstream re-reads them as something else.
@@ -340,12 +342,164 @@ export const STOCK_WORKER_SRC = String.raw`
     };
   }
 
-  // Anything that is not a stock job goes to the handler the bundle installed,
-  // untouched.
+  /** A price as the price fixer writes it: currency, spaces and thousands separators gone. */
+  function looksLikePrice(text) {
+    return /^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(bareNumber(text));
+  }
+
+  /**
+   * Prices for a list with no headings at all - a column of barcodes and a
+   * column of prices, pasted straight out of somewhere. The price fixer only
+   * finds its columns by their headings, so this is its fallback, judging each
+   * column by what is in it the way the stock side already does: the item
+   * column as findColumnsByContent picks it, and of the other columns the one
+   * made of prices. With more than one, the last is taken, since a newer price
+   * is written after an older one.
+   */
+  function findPriceByContent(workbook) {
+    var best = null;
+
+    workbook.SheetNames.forEach(function (name, sheetIndex) {
+      var sheet = workbook.Sheets[name];
+      if (!sheet || !sheet["!ref"]) return;
+
+      var range = utils.decode_range(sheet["!ref"]);
+      var lastRow = Math.min(range.e.r, range.s.r + HEADER_SCAN_ROWS - 1);
+      var columns = [];
+
+      for (var column = range.s.c; column <= range.e.c; column += 1) {
+        var filled = 0;
+        var codes = 0;
+        var prices = 0;
+        var width = 0;
+
+        for (var row = range.s.r; row <= lastRow; row += 1) {
+          var text = cellText(sheet[utils.encode_cell({ r: row, c: column })], "scan").trim();
+          if (!text) continue;
+          filled += 1;
+          width += text.length;
+          if (looksLikeCode(text)) codes += 1;
+          if (looksLikePrice(text)) prices += 1;
+        }
+
+        if (filled) {
+          columns.push({ colIndex: column, filled: filled, code: codes / filled, price: prices / filled, width: width / filled });
+        }
+      }
+
+      var item = null;
+      columns.forEach(function (column) {
+        if (column.code < CONFIDENT) return;
+        if (!item || column.code > item.code || (column.code === item.code && column.width > item.width)) item = column;
+      });
+      if (!item) return;
+
+      var candidates = columns.filter(function (column) {
+        return column.colIndex !== item.colIndex && column.price >= CONFIDENT;
+      });
+      if (!candidates.length) return;
+      var price = candidates[candidates.length - 1];
+
+      var usable = Math.min(item.filled, price.filled);
+      if (best && usable <= best.usable) return;
+
+      best = {
+        sheetName: name, sheetIndex: sheetIndex, worksheet: sheet, range: range, usable: usable,
+        item: item, price: price, alternativePrices: candidates.length - 1,
+      };
+    });
+
+    return best;
+  }
+
+  /** The price fixer's output, built from columns found by content instead of by heading. */
+  function processPriceByContent(found, baseName) {
+    var rows = [];
+    var skippedBlank = 0;
+    var unsafeNumericItems = 0;
+
+    for (var row = found.range.s.r; row <= found.range.e.r; row += 1) {
+      var itemCell = found.worksheet[utils.encode_cell({ r: row, c: found.item.colIndex })];
+      var item = cellText(itemCell, "item").trim();
+      var price = bareNumber(cellText(found.worksheet[utils.encode_cell({ r: row, c: found.price.colIndex })], "price").trim());
+
+      // As on the stock side: with no headings, a row is kept only while its
+      // code still reads as one, which drops a stray note or title line.
+      if (item && !looksLikeCode(item)) continue;
+      if (!item || !price) {
+        if (item || price) skippedBlank += 1;
+        continue;
+      }
+
+      if (itemCell && typeof itemCell.v === "number" && (!Number.isSafeInteger(itemCell.v) || Math.abs(itemCell.v) >= 1e15)) {
+        unsafeNumericItems += 1;
+      }
+
+      rows.push([item, price]);
+    }
+
+    if (!rows.length) {
+      throw new Error("The item-code and price columns were found by their contents, but no row held both.");
+    }
+
+    var book = utils.book_new();
+    utils.book_append_sheet(book, twoColumnSheet(rows), "Prices");
+    var buffer = writeWorkbook(book, { type: "array", bookType: "xlsx", compression: true, cellStyles: true });
+    var safeName = String(baseName || "prices").replace(/[\\/:*?"<>|]+/g, "_").trim() || "prices";
+
+    return {
+      buffer: buffer,
+      filename: safeName + "_price_fixed.xlsx",
+      count: rows.length,
+      skippedBlank: skippedBlank,
+      unsafeNumericItems: unsafeNumericItems,
+      sheetName: found.sheetName,
+      headerless: true,
+      headerRow: null,
+      itemHeader: utils.encode_col(found.item.colIndex),
+      priceHeader: utils.encode_col(found.price.colIndex),
+      alternativePrices: found.alternativePrices,
+    };
+  }
+
+  /**
+   * A price job: by heading first, exactly as before, and only when no heading
+   * pair turns up at all, by content.
+   */
+  function runPrice(data) {
+    self.postMessage({ type: "progress", progress: 15, status: "Reading spreadsheet" });
+    var workbook = data.kind === "file" ? readWorkbook(data.buffer) : gridWorkbook(data.grid || []);
+
+    self.postMessage({ type: "progress", progress: 48, status: "Finding item and price columns" });
+    var result;
+    try {
+      result = processPrice(workbook, data.baseName);
+    } catch (error) {
+      var message = error instanceof Error ? error.message : String(error);
+      if (message.indexOf("Could not find") !== 0) throw error;
+      var found = findPriceByContent(workbook);
+      if (!found) throw error;
+      result = processPriceByContent(found, data.baseName);
+    }
+
+    self.postMessage({ type: "progress", progress: 82, status: "Building text-formatted XLSX" });
+    self.postMessage(Object.assign({ type: "success" }, result), [result.buffer]);
+  }
+
+  // Anything that is neither a stock nor a price job goes to the handler the
+  // bundle installed, untouched.
   var base = self.onmessage;
 
   self.onmessage = function (event) {
     var data = event && event.data;
+    if (data && data.tool === "price") {
+      try {
+        runPrice(data);
+      } catch (error) {
+        self.postMessage({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
     if (!data || data.tool !== "stock") { base(event); return; }
 
     try {
